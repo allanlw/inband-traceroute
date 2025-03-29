@@ -15,6 +15,16 @@ log = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
 
 clap = { workspace = true, features = ["derive"] }
+
+hyper = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util = { workspace = true, features = ["full"] }
+axum = { workspace = true, features = ["http2"] }
+etherparse = { workspace = true }
+rustls-acme = { workspace = true, features = ["axum"] }
+tokio-stream = { workspace = true }
+axum-server = { workspace = true }
+
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }
@@ -31,6 +41,7 @@ aya-build = { workspace = true }
 # workflows with stable cargo; stable cargo outright refuses to load manifests that use unstable
 # features.
 inband-traceroute-ebpf = { path = "../inband-traceroute-ebpf" }
+
 
 [[bin]]
 name = "inband-traceroute"

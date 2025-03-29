@@ -1,14 +1,90 @@
-use anyhow::Context as _;
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+};
+
+use anyhow::Context;
+use axum::{routing::get, Router};
 use aya::programs::{Xdp, XdpFlags};
 use clap::Parser;
-#[rustfmt::skip]
-use log::{debug, warn};
+use log::{error, info};
+use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::signal;
+use tokio_stream::StreamExt;
 
 #[derive(Debug, Parser)]
+#[command(version, about)]
 struct Opt {
-    #[clap(short, long, default_value = "eth0")]
+    #[arg(short, long, default_value = "eth0")]
     iface: String,
+
+    /// Addresses to listen on
+    #[arg(short, long = "address", required = true)]
+    addresses: Vec<IpAddr>,
+
+    /// Domains for TLS certificate
+    #[arg(short, long = "domain", required = true)]
+    domains: Vec<String>,
+
+    /// Contact info for TLS certificate
+    #[arg(short, long = "email")]
+    emails: Vec<String>,
+
+    /// Cache directory for TLS certificates
+    #[arg(short, long)]
+    cache_dir: Option<PathBuf>,
+
+    #[arg(short, long, default_value = "443")]
+    port: u16,
+}
+
+fn setup_ebpf(opt: &Opt) -> anyhow::Result<()> {
+    let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
+        env!("OUT_DIR"),
+        "/inband-traceroute"
+    )))?;
+    aya_log::EbpfLogger::init(&mut ebpf)?;
+
+    let program: &mut Xdp = ebpf.program_mut("inband_traceroute").unwrap().try_into()?;
+    program.load()?;
+    program.attach(&opt.iface, XdpFlags::SKB_MODE)
+        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+
+    Ok(())
+}
+
+fn setup_server(opt: &Opt) {
+    let mut state = AcmeConfig::new(opt.domains.clone())
+        .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
+        .cache_option(opt.cache_dir.clone().map(DirCache::new))
+        .directory(rustls_acme::acme::LETS_ENCRYPT_PRODUCTION_DIRECTORY)
+        .state();
+
+    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
+    let acceptor = state.axum_acceptor(state.default_rustls_config());
+
+    tokio::spawn(async move {
+        loop {
+            match state.next().await.unwrap() {
+                Ok(ok) => info!("event: {:?}", ok),
+                Err(err) => error!("error: {:?}", err),
+            }
+        }
+    });
+
+    for addr in &opt.addresses {
+        info!("Listening on {}", addr);
+        let service = app.clone().into_make_service();
+        let acceptor = acceptor.clone();
+        let addr = SocketAddr::new(*addr, opt.port);
+        tokio::task::spawn(async move {
+            axum_server::bind(addr)
+                .acceptor(acceptor)
+                .serve(service)
+                .await
+                .unwrap();
+        });
+    }
 }
 
 #[tokio::main]
@@ -17,39 +93,14 @@ async fn main() -> anyhow::Result<()> {
 
     env_logger::init();
 
-    // Bump the memlock rlimit. This is needed for older kernels that don't use the
-    // new memcg based accounting, see https://lwn.net/Articles/837122/
-    let rlim = libc::rlimit {
-        rlim_cur: libc::RLIM_INFINITY,
-        rlim_max: libc::RLIM_INFINITY,
-    };
-    let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
-    if ret != 0 {
-        debug!("remove limit on locked memory failed, ret is: {}", ret);
-    }
+    setup_ebpf(&opt)?;
 
-    // This will include your eBPF object file as raw bytes at compile-time and load it at
-    // runtime. This approach is recommended for most real-world use cases. If you would
-    // like to specify the eBPF program at runtime rather than at compile-time, you can
-    // reach for `Bpf::load_file` instead.
-    let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
-        env!("OUT_DIR"),
-        "/inband-traceroute"
-    )))?;
-    if let Err(e) = aya_log::EbpfLogger::init(&mut ebpf) {
-        // This can happen if you remove all log statements from your eBPF program.
-        warn!("failed to initialize eBPF logger: {}", e);
-    }
-    let Opt { iface } = opt;
-    let program: &mut Xdp = ebpf.program_mut("inband_traceroute").unwrap().try_into()?;
-    program.load()?;
-    program.attach(&iface, XdpFlags::SKB_MODE)
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+    setup_server(&opt);
+
+    println!("Server started. Press Ctrl+C to stop.");
 
     let ctrl_c = signal::ctrl_c();
-    println!("Waiting for Ctrl-C...");
     ctrl_c.await?;
-    println!("Exiting...");
 
     Ok(())
 }

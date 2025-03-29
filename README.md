@@ -1,9 +1,5 @@
 # inband-traceroute
 
-Design is to use XDP on the interface to process ethernet packets. This avoids the need for a raw socket, etc.
-
-Aya can create an XDP program template using cargo-generate: https://aya-rs.dev/book/start/development/#prerequisites
-
 AsyncPerfEventArray (user mode) and PerfEventArray map for custom type.
 
 array map can be used for configuration if required.
@@ -11,15 +7,8 @@ array map can be used for configuration if required.
 Example here:
 https://github.com/aya-rs/book/blob/76fa86565f0f06f003536fb0cb496ab69f451ff6/examples/cgroup-skb-egress/cgroup-skb-egress-ebpf/src/main.rs
 
-tokio for async support on user side
-etherparse for packet parsing
-rustls_acme https://docs.rs/rustls-acme/latest/rustls_acme/
-
-https://docs.rs/etherparse/latest/etherparse/index.html
-
 https://docs.rs/aya/latest/aya/maps/perf/struct.PerfEventArray.html
 
-Hyper for HTTP support
 Raw socket for sending packets..? (one for IPv4 and one for IPv6)
 
 
@@ -28,9 +17,6 @@ Raw socket for sending packets..? (one for IPv4 and one for IPv6)
 
 1. stable rust toolchains: `rustup toolchain install stable`
 1. nightly rust toolchains: `rustup toolchain install nightly --component rust-src`
-1. (if cross-compiling) rustup target: `rustup target add ${ARCH}-unknown-linux-musl`
-1. (if cross-compiling) LLVM: (e.g.) `brew install llvm` (on macOS)
-1. (if cross-compiling) C toolchain: (e.g.) [`brew install filosottile/musl-cross/musl-cross`](https://github.com/FiloSottile/homebrew-musl-cross) (on macOS)
 1. bpf-linker: `cargo install bpf-linker` (`--no-default-features` on macOS)
 
 ## Build & Run

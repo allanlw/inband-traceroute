@@ -1,0 +1,16 @@
+#!/bin/bash
+
+INTERFACE="ens4"
+
+IPV4="$(ip addr show $INTERFACE | grep -oP '(?<=inet\s)\d+(\.\d+){3}')"
+IPV6="$(ip addr show $INTERFACE | grep -oP '(?<=inet6\s)[0-9a-fA-F:]+(?=/)' | head -n 1)"
+
+echo "IPv4: $IPV4"
+echo "IPv6: $IPV6"
+
+RUST_LOG=debug cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
+    --iface ens4 \
+    --domain inband-traceroute.net \
+    --cache-dir ./.cert-cache \
+    --address $IPV4 \
+    --address $IPV6
