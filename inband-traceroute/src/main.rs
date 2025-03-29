@@ -1,6 +1,7 @@
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -36,6 +37,11 @@ struct Opt {
 
     #[arg(short, long, default_value = "443")]
     port: u16,
+
+    /// Use Let's Encrypt production environment
+    /// (see https://letsencrypt.org/docs/staging-environment/)
+    #[clap(long)]
+    prod: bool,
 }
 
 fn setup_ebpf(opt: &Opt) -> anyhow::Result<()> {
@@ -57,11 +63,14 @@ fn setup_server(opt: &Opt) {
     let mut state = AcmeConfig::new(opt.domains.clone())
         .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
         .cache_option(opt.cache_dir.clone().map(DirCache::new))
-        .directory(rustls_acme::acme::LETS_ENCRYPT_PRODUCTION_DIRECTORY)
+        .directory_lets_encrypt(opt.prod)
         .state();
 
     let app = Router::new().route("/", get(|| async { "Hello, World!" }));
-    let acceptor = state.axum_acceptor(state.default_rustls_config());
+    let mut rustls_config = state.default_rustls_config();
+    Arc::get_mut(&mut rustls_config).unwrap().alpn_protocols =
+        vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    let acceptor = state.axum_acceptor(rustls_config);
 
     tokio::spawn(async move {
         loop {

@@ -14,4 +14,5 @@ RUST_LOG=debug cargo run --release --config 'target."cfg(all())".runner="sudo -E
     --domain "$DOMAIN" \
     --cache-dir ./.cert-cache \
     --address "$IPV4" \
-    --address "$IPV6"
+    --address "$IPV6" \
+    --prod
