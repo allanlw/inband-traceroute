@@ -19,6 +19,9 @@ use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::{signal, time::sleep};
 use tokio_stream::StreamExt;
+use tower_http::trace::{self, TraceLayer};
+use tracing::Level;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -87,7 +90,17 @@ fn setup_server(opt: &Opt) {
         .directory_lets_encrypt(opt.prod)
         .state();
 
-    let app = Router::new().route("/", get(index_handler));
+    let app = Router::new().route("/", get(index_handler)).layer(
+        TraceLayer::new_for_http()
+            .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+            .on_response(
+                trace::DefaultOnResponse::new()
+                    .level(Level::INFO)
+                    .include_headers(true),
+            )
+            .on_request(trace::DefaultOnRequest::new().level(Level::INFO)),
+    );
+
     let mut rustls_config = state.default_rustls_config();
     Arc::get_mut(&mut rustls_config).unwrap().alpn_protocols =
         vec![b"h2".to_vec(), b"http/1.1".to_vec()];
@@ -121,7 +134,14 @@ fn setup_server(opt: &Opt) {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .or_else(|_| EnvFilter::try_new("inband_traceroute=error,tower_http=warn"))
+                .unwrap(),
+        )
+        .compact()
+        .init();
 
     setup_ebpf(&opt)?;
 

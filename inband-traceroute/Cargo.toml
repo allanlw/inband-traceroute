@@ -9,7 +9,6 @@ inband-traceroute-common = { path = "../inband-traceroute-common", features = ["
 anyhow = { workspace = true, default-features = true }
 aya = { workspace = true }
 aya-log = { workspace = true }
-env_logger = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
@@ -25,6 +24,11 @@ rustls-acme = { workspace = true, features = ["axum"] }
 tokio-stream = { workspace = true }
 axum-server = { workspace = true }
 async-stream = { workspace = true }
+
+
+tower-http = { workspace = true , features = ["trace"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features=["env-filter"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
