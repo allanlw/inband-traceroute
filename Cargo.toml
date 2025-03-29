@@ -29,6 +29,7 @@ rustls-acme = { version = "0.13.0", features = ["axum"] }
 etherparse = "0.17"
 tokio-stream = "0.1.17"
 axum-server = "0.7.2"
+async-stream = "0.3.6"
 
 [profile.release.package.inband-traceroute-ebpf]
 debug = 2

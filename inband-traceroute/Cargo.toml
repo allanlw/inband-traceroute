@@ -24,6 +24,7 @@ etherparse = { workspace = true }
 rustls-acme = { workspace = true, features = ["axum"] }
 tokio-stream = { workspace = true }
 axum-server = { workspace = true }
+async-stream = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

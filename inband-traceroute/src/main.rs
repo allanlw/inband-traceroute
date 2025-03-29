@@ -2,15 +2,22 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
-use axum::{routing::get, Router};
+use async_stream::stream;
+use axum::{
+    body::{Body, Bytes},
+    response::Response,
+    routing::get,
+    Router,
+};
 use aya::programs::{Xdp, XdpFlags};
 use clap::Parser;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
-use tokio::signal;
+use tokio::{signal, time::sleep};
 use tokio_stream::StreamExt;
 
 #[derive(Debug, Parser)]
@@ -59,6 +66,20 @@ fn setup_ebpf(opt: &Opt) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn index_handler() -> Response {
+    Response::builder()
+        .status(200)
+        .header("Content-Type", "text/html; charset=UTF-8")
+        .body(Body::from_stream(stream! {
+            yield Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"Hello, world!\n"));
+            sleep(Duration::from_secs(3)).await;
+            yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"This is a simple HTTP server.\n"));
+            sleep(Duration::from_secs(3)).await;
+            yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"It supports HTTP/2 and HTTP/1.1.\n"));
+        }))
+        .unwrap()
+}
+
 fn setup_server(opt: &Opt) {
     let mut state = AcmeConfig::new(opt.domains.clone())
         .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
@@ -66,7 +87,7 @@ fn setup_server(opt: &Opt) {
         .directory_lets_encrypt(opt.prod)
         .state();
 
-    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
+    let app = Router::new().route("/", get(index_handler));
     let mut rustls_config = state.default_rustls_config();
     Arc::get_mut(&mut rustls_config).unwrap().alpn_protocols =
         vec![b"h2".to_vec(), b"http/1.1".to_vec()];
