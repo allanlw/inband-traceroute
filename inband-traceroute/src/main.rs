@@ -13,7 +13,10 @@ use axum::{
     routing::get,
     Router,
 };
-use aya::programs::{Xdp, XdpFlags};
+use aya::{
+    programs::{Xdp, XdpFlags},
+    Ebpf,
+};
 use clap::Parser;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
@@ -54,7 +57,7 @@ struct Opt {
     prod: bool,
 }
 
-fn setup_ebpf(opt: &Opt) -> anyhow::Result<()> {
+fn setup_ebpf(opt: &Opt) -> anyhow::Result<Ebpf> {
     let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/inband-traceroute"
@@ -63,10 +66,11 @@ fn setup_ebpf(opt: &Opt) -> anyhow::Result<()> {
 
     let program: &mut Xdp = ebpf.program_mut("inband_traceroute").unwrap().try_into()?;
     program.load()?;
-    program.attach(&opt.iface, XdpFlags::SKB_MODE)
-        .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+    program
+        .attach(&opt.iface, XdpFlags::SKB_MODE)
+        .context("failed to attach the XDP program - wrong mode?")?;
 
-    Ok(())
+    Ok(ebpf)
 }
 
 async fn index_handler() -> Response {
@@ -143,11 +147,12 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
-    setup_ebpf(&opt)?;
+    // Note: program will be detached when dropped
+    let _ebpf = setup_ebpf(&opt)?;
 
     setup_server(&opt);
 
-    println!("Server started. Press Ctrl+C to stop.");
+    info!("Server started. Press Ctrl+C to stop.");
 
     let ctrl_c = signal::ctrl_c();
     ctrl_c.await?;

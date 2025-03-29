@@ -19,12 +19,10 @@ hyper = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true, features = ["full"] }
 axum = { workspace = true, features = ["http2"] }
-etherparse = { workspace = true }
 rustls-acme = { workspace = true, features = ["axum"] }
 tokio-stream = { workspace = true }
 axum-server = { workspace = true }
 async-stream = { workspace = true }
-
 
 tower-http = { workspace = true , features = ["trace"] }
 tracing = { workspace = true }
