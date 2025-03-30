@@ -151,8 +151,17 @@ fn setup_server(opt: &Opt) {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let tracer_v4 = opt.ipv4.map(|ipv4| tracer::Tracer::new(ipv4, opt.port, opt.max_hops));
-    let tracer_v6 = opt.ipv6.map(|ipv6| tracer::Tracer::new(ipv6, opt.port, opt.max_hops));
+    let tracer_v4 = if let Some(ipv4) = opt.ipv4 {
+        Some(tracer::Tracer::new(ipv4, opt.port, opt.max_hops).await?)
+    } else {
+        None
+    };
+
+    let tracer_v6 = if let Some(ipv6) = opt.ipv6 {
+        Some(tracer::Tracer::new(ipv6, opt.port, opt.max_hops).await?)
+    } else {
+        None
+    };
 
     tracing_subscriber::fmt()
         .with_env_filter(
