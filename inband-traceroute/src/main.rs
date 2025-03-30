@@ -151,7 +151,13 @@ fn setup_server(opt: &Opt) {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let tracer = tracer::Tracer::new(opt.ipv4, opt.ipv6, opt.port, opt.max_hops);
+    let tracer = if let Some(ipv4) = opt.ipv4 {
+        tracer::Tracer::new(ipv4, opt.port, opt.max_hops)
+    } else if let Some(ipv6) = opt.ipv6 {
+        tracer::Tracer::new(ipv6, opt.port, opt.max_hops)
+    } else {
+        panic!("Either IPv4 or IPv6 must be specified");
+    };
 
     tracing_subscriber::fmt()
         .with_env_filter(
