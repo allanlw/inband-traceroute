@@ -1,6 +1,6 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-pub struct Tracer<IP> {
+pub struct Tracer<IP: Into<IpAddr>> {
     pub ip: IP,
     pub port: u16,
     pub max_hops: u8,
