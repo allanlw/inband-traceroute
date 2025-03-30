@@ -61,6 +61,9 @@ struct Opt {
     /// (see https://letsencrypt.org/docs/staging-environment/)
     #[clap(long)]
     prod: bool,
+    /// Maximum number of hops
+    #[arg(long, default_value = "32")]
+    max_hops: u8,
 }
 
 fn setup_ebpf(opt: &Opt) -> anyhow::Result<Ebpf> {
@@ -148,7 +151,7 @@ fn setup_server(opt: &Opt) {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let tracer = tracer::Tracer::new(opt.ipv4, opt.ipv6, opt.port, 30);
+    let tracer = tracer::Tracer::new(opt.ipv4, opt.ipv6, opt.port, opt.max_hops);
 
     tracing_subscriber::fmt()
         .with_env_filter(
