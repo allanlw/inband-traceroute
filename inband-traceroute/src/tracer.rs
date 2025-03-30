@@ -27,6 +27,7 @@ impl<IP: Into<IpAddr>> Tracer<IP> {
             socket,
         })
     }
+}
 
 impl<IP> Tracer<IP> {
     pub fn new(ip: IP, port: u16, max_hops: u8) -> Self {
