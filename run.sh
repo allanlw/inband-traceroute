@@ -13,6 +13,7 @@ RUST_LOG=info cargo run --release --config 'target."cfg(all())".runner="sudo -E"
     --iface "$INTERFACE" \
     --domain "$DOMAIN" \
     --cache-dir ./.cert-cache \
-    --address "$IPV4" \
-    --address "$IPV6" \
+    --ipv4 "$IPV4" \
+    --ipv6 "$IPV6" \
     --prod
+

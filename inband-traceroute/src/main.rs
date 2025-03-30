@@ -1,7 +1,7 @@
 mod tracer;
 
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -11,6 +11,7 @@ use anyhow::Context;
 use async_stream::stream;
 use axum::{
     body::{Body, Bytes},
+    extract::State,
     response::Response,
     routing::get,
     Router,
@@ -82,12 +83,17 @@ fn setup_ebpf(opt: &Opt) -> anyhow::Result<Ebpf> {
     Ok(ebpf)
 }
 
-async fn index_handler() -> Response {
+struct AppState {
+    tracer_v4: Option<tracer::Tracer>,
+    tracer_v6: Option<tracer::Tracer>,
+}
+
+async fn index_handler(state: State<Arc<AppState>>) -> Response {
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=UTF-8")
         .body(Body::from_stream(stream! {
-            yield Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"Hello, world!\n"));
+            yield Ok::<Bytes, anyhow::Error>( format!("{:?}",state.tracer_v4).into());
             sleep(Duration::from_secs(3)).await;
             yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"This is a simple HTTP server.\n"));
             sleep(Duration::from_secs(3)).await;
@@ -96,32 +102,35 @@ async fn index_handler() -> Response {
         .unwrap()
 }
 
-fn setup_server(opt: &Opt) {
-    let mut state = AcmeConfig::new(opt.domains.clone())
+fn setup_server(opt: &Opt, state: Arc<AppState>) {
+    let mut acme_state = AcmeConfig::new(opt.domains.clone())
         .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
         .cache_option(opt.cache_dir.clone().map(DirCache::new))
         .directory_lets_encrypt(opt.prod)
         .state();
 
-    let app = Router::new().route("/", get(index_handler)).layer(
-        TraceLayer::new_for_http()
-            .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-            .on_response(
-                trace::DefaultOnResponse::new()
-                    .level(Level::INFO)
-                    .include_headers(true),
-            )
-            .on_request(trace::DefaultOnRequest::new().level(Level::INFO)),
-    );
+    let app = Router::new()
+        .route("/", get(index_handler))
+        .with_state(state)
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(
+                    trace::DefaultOnResponse::new()
+                        .level(Level::INFO)
+                        .include_headers(true),
+                )
+                .on_request(trace::DefaultOnRequest::new().level(Level::INFO)),
+        );
 
-    let mut rustls_config = state.default_rustls_config();
+    let mut rustls_config = acme_state.default_rustls_config();
     Arc::get_mut(&mut rustls_config).unwrap().alpn_protocols =
         vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-    let acceptor = state.axum_acceptor(rustls_config);
+    let acceptor = acme_state.axum_acceptor(rustls_config);
 
     tokio::spawn(async move {
         loop {
-            match state.next().await.unwrap() {
+            match acme_state.next().await.unwrap() {
                 Ok(ok) => info!("event: {:?}", ok),
                 Err(err) => error!("error: {:?}", err),
             }
@@ -151,18 +160,6 @@ fn setup_server(opt: &Opt) {
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
-    let tracer_v4 = if let Some(ipv4) = opt.ipv4 {
-        Some(tracer::Tracer::new(ipv4, opt.port, opt.max_hops).await?)
-    } else {
-        None
-    };
-
-    let tracer_v6 = if let Some(ipv6) = opt.ipv6 {
-        Some(tracer::Tracer::new(ipv6, opt.port, opt.max_hops).await?)
-    } else {
-        None
-    };
-
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -172,10 +169,36 @@ async fn main() -> anyhow::Result<()> {
         .compact()
         .init();
 
+    info!("Starting inband-traceroute...");
+
+    info!("Using interface: {}", opt.iface);
+    info!("Initializing raw sockets...");
+
+    let tracer_v4 = opt
+        .ipv4
+        .map(|ipv4| tracer::Tracer::new(SocketAddr::new(IpAddr::V4(ipv4), opt.port), opt.max_hops))
+        .transpose()
+        .context("failed to create IPv4 tracer")?;
+
+    let tracer_v6 = opt
+        .ipv6
+        .map(|ipv6| tracer::Tracer::new(SocketAddr::new(IpAddr::V6(ipv6), opt.port), opt.max_hops))
+        .transpose()
+        .context("Failed to create IPv6 tracer")?;
+
+    let state = Arc::new(AppState {
+        tracer_v4,
+        tracer_v6,
+    });
+
+    info!("Loading eBPF program...");
+
     // Note: program will be detached when dropped
     let _ebpf = setup_ebpf(&opt)?;
 
-    setup_server(&opt);
+    info!("Setting up server...");
+
+    setup_server(&opt, state);
 
     info!("Server started. Press Ctrl+C to stop.");
 
