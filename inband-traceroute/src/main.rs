@@ -1,3 +1,5 @@
+mod tracer;
+
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
@@ -145,6 +147,8 @@ fn setup_server(opt: &Opt) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
+
+    let tracer = tracer::Tracer::new(opt.ipv4, opt.ipv6, opt.port, 30);
 
     tracing_subscriber::fmt()
         .with_env_filter(
