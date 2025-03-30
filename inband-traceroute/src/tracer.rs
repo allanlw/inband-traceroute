@@ -1,8 +1,8 @@
 use socket2::{Domain, Protocol, Socket, Type};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use tokio::net::UdpSocket;
 
-pub struct Tracer<IP: Into<IpAddr>> {
+pub struct Tracer<IP: Into<IpAddr> + Copy> {
     pub ip: IP,
     pub port: u16,
     pub max_hops: u8,
@@ -15,7 +15,7 @@ impl<IP: Into<IpAddr>> Tracer<IP> {
             IpAddr::V4(_) => Domain::IPV4,
             IpAddr::V6(_) => Domain::IPV6,
         };
-        let socket = Socket::new(domain, Type::RAW, Some(Protocol::ICMPV4))?;
+        let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
         socket.set_nonblocking(true)?;
         let std_socket = std::net::UdpSocket::from(socket);
         let socket = UdpSocket::from_std(std_socket)?;
@@ -26,11 +26,5 @@ impl<IP: Into<IpAddr>> Tracer<IP> {
             max_hops,
             socket,
         })
-    }
-}
-
-impl<IP> Tracer<IP> {
-    pub fn new(ip: IP, port: u16, max_hops: u8) -> Self {
-        Tracer { ip, port, max_hops }
     }
 }
