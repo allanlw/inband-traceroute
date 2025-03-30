@@ -123,15 +123,10 @@ fn setup_server(opt: &Opt) {
         }
     });
 
-    let mut addresses = Vec::new();
-
-    if let Some(ipv4) = opt.ipv4 {
-        addresses.push(SocketAddr::new(ipv4.into(), opt.port));
-    }
-
-    if let Some(ipv6) = opt.ipv6 {
-        addresses.push(SocketAddr::new(ipv6.into(), opt.port));
-    }
+    let addresses: Vec<SocketAddr> = [opt.ipv4.map(IpAddr::V4), opt.ipv6.map(IpAddr::V6)]
+        .into_iter()
+        .filter_map(|ip| ip.map(|ip| SocketAddr::new(ip, opt.port)))
+        .collect();
 
     for addr in addresses {
         info!("Listening on {}", addr);
