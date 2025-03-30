@@ -152,9 +152,9 @@ async fn main() -> anyhow::Result<()> {
     let opt = Opt::parse();
 
     let tracer = if let Some(ipv4) = opt.ipv4 {
-        tracer::Tracer::new(ipv4, opt.port, opt.max_hops)
+        tracer::Tracer::new(IpAddr::V4(ipv4), opt.port, opt.max_hops)
     } else if let Some(ipv6) = opt.ipv6 {
-        tracer::Tracer::new(ipv6, opt.port, opt.max_hops)
+        tracer::Tracer::new(IpAddr::V6(ipv6), opt.port, opt.max_hops)
     } else {
         panic!("Either IPv4 or IPv6 must be specified");
     };
