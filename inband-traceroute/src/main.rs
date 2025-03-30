@@ -32,9 +32,13 @@ struct Opt {
     #[arg(short, long, default_value = "eth0")]
     iface: String,
 
-    /// Addresses to listen on
-    #[arg(short, long = "address", required = true)]
-    addresses: Vec<IpAddr>,
+    /// IPv4 address to listen on
+    #[arg(long = "ipv4", required_unless_present = "ipv6")]
+    ipv4: Option<IpAddr>,
+
+    /// IPv6 address to listen on
+    #[arg(long = "ipv6", required_unless_present = "ipv4")]
+    ipv6: Option<IpAddr>,
 
     /// Domains for TLS certificate
     #[arg(short, long = "domain", required = true)]
@@ -119,11 +123,25 @@ fn setup_server(opt: &Opt) {
         }
     });
 
-    for addr in &opt.addresses {
+    if let Some(ipv4) = opt.ipv4 {
+        let addr = SocketAddr::new(ipv4, opt.port);
         info!("Listening on {}", addr);
         let service = app.clone().into_make_service();
         let acceptor = acceptor.clone();
-        let addr = SocketAddr::new(*addr, opt.port);
+        tokio::task::spawn(async move {
+            axum_server::bind(addr)
+                .acceptor(acceptor)
+                .serve(service)
+                .await
+                .unwrap();
+        });
+    }
+
+    if let Some(ipv6) = opt.ipv6 {
+        let addr = SocketAddr::new(ipv6, opt.port);
+        info!("Listening on {}", addr);
+        let service = app.clone().into_make_service();
+        let acceptor = acceptor.clone();
         tokio::task::spawn(async move {
             axum_server::bind(addr)
                 .acceptor(acceptor)
