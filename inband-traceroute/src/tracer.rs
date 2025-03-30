@@ -13,6 +13,10 @@ pub struct Tracer<IP: Into<IpAddr> + Copy> {
 
 impl<IP: Into<IpAddr> + std::marker::Copy> Tracer<IP> {
     pub fn new(listen_addr: SocketAddr, max_hops: u8) -> anyhow::Result<Self> {
+        let domain = match listen_addr {
+            SocketAddr::V4(_) => Domain::IPV4,
+            SocketAddr::V6(_) => Domain::IPV6,
+        };
         let socket = raw::AsyncWriteOnlyIPRawSocket::new(domain)?;
 
         Ok(Self {
