@@ -1,6 +1,6 @@
 use socket2::{Domain, Protocol, Socket, Type};
-use tokio::net::UdpSocket;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tokio::net::UdpSocket;
 
 pub struct Tracer<IP: Into<IpAddr>> {
     pub ip: IP,
@@ -31,10 +31,6 @@ impl<IP: Into<IpAddr>> Tracer<IP> {
 
 impl<IP> Tracer<IP> {
     pub fn new(ip: IP, port: u16, max_hops: u8) -> Self {
-        Tracer {
-            ip,
-            port,
-            max_hops,
-        }
+        Tracer { ip, port, max_hops }
     }
 }
