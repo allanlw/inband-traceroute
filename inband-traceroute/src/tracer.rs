@@ -1,13 +1,13 @@
 use std::net::IpAddr;
 
-pub struct Tracer {
-    pub ip: IpAddr,
+pub struct Tracer<IP> {
+    pub ip: IP,
     pub port: u16,
     pub max_hops: u8,
 }
 
-impl Tracer {
-    pub fn new(ip: IpAddr, port: u16, max_hops: u8) -> Self {
+impl<IP> Tracer<IP> {
+    pub fn new(ip: IP, port: u16, max_hops: u8) -> Self {
         Tracer {
             ip,
             port,
