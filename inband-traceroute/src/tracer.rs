@@ -3,9 +3,10 @@ use async_stream::try_stream;
 use futures::stream::{self, Stream};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
-use network_types::ip::{IpHeader, Ipv4Header, Ipv6Header};
-use network_types::tcp::TcpHeader;
-use network_types::Packet;
+use network_types::{
+    ip::{Ipv4Hdr, Ipv6Hdr},
+    tcp::TcpHdr,
+};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
 use std::{
@@ -66,7 +67,7 @@ impl Tracer {
     ) -> anyhow::Result<()> {
         let mut buf = [0u8; 1500]; // Adjust buffer size as needed
         let ip_packet = if addr.is_ipv4() {
-            let mut packet = Ipv4Header::new();
+            let mut packet = Ipv4Hdr::new();
             packet.version = 4;
             packet.header_length = 5;
             packet.total_length = 40; // Adjust as needed
@@ -76,7 +77,7 @@ impl Tracer {
             packet.destination = addr.ip().to_ipv4().unwrap();
             packet
         } else {
-            let mut packet = Ipv6Header::new();
+            let mut packet = Ipv6Hdr::new();
             packet.version = 6;
             packet.hop_limit = ttl;
             packet.next_header = network_types::ip::Protocol::Tcp;
@@ -85,7 +86,7 @@ impl Tracer {
             packet
         };
 
-        let mut tcp_packet = TcpHeader::new();
+        let mut tcp_packet = TcpHdr::new();
         tcp_packet.source_port = self.listen_addr.port();
         tcp_packet.destination_port = addr.port();
         tcp_packet.sequence_number = seq;
@@ -95,7 +96,9 @@ impl Tracer {
 
         // Serialize and send the packet
         let packet_size = ip_packet.header_len() + tcp_packet.header_len();
-        self.socket.send_to(&buf[..packet_size], &addr.into()).await?;
+        self.socket
+            .send_to(&buf[..packet_size], &addr.into())
+            .await?;
 
         Ok(())
     }
@@ -168,7 +171,7 @@ pub struct TraceHandle {
     remote: SocketAddr,
     key: inband_traceroute_common::SocketAddr,
     sender: UnboundedSender<TraceEvent>,
-    receiver: UnboundedReceiver<TraceEvent>,
+    receiver: Mutex<UnboundedReceiver<TraceEvent>>,
 }
 
 impl TraceHandle {
@@ -185,7 +188,7 @@ impl TraceHandle {
             remote,
             key,
             sender,
-            receiver,
+            receiver: Mutex::new(receiver),
         });
 
         {
@@ -216,8 +219,10 @@ impl TraceHandle {
         let mut ack_seq = 0;
         let mut seq = 0;
 
+        let mut receiver = self.receiver.lock().await;
+
         loop {
-            match self.receiver.recv().await {
+            match receiver.recv().await {
                 Some(event) => {
                     if event.event_type == TraceEventType::TCP_ACK {
                         ack_seq = event.ack_seq;
@@ -240,7 +245,7 @@ impl TraceHandle {
 
     pub async fn hop_stream(&self) -> anyhow::Result<impl Stream<Item = anyhow::Result<Hop>>> {
         let (mut ack_seq, mut seq) =
-            timeout(Duration::from_seconds(5), self.wait_for_initial_ack()).await?;
+            timeout(Duration::from_secs(5), self.wait_for_initial_ack()).await??;
 
         return Ok(try_stream! {
             yield Hop {
