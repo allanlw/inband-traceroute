@@ -15,8 +15,8 @@ pub struct TraceEvent {
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum TraceEventType {
-    TCP_ACK,
-    TCP_RST,
+    TcpAck,
+    TcpRst,
 }
 
 #[repr(u8)]

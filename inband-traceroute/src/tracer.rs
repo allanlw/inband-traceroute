@@ -4,7 +4,7 @@ use futures::stream::{self, Stream};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
 use network_types::{
-    ip::{Ipv4Hdr, Ipv6Hdr},
+    ip::{Ipv4Hdr, Ipv6Hdr, IpProto},
     tcp::TcpHdr,
 };
 use rand::{rngs::OsRng, Rng};
@@ -67,26 +67,50 @@ impl Tracer {
     ) -> anyhow::Result<()> {
         let mut buf = [0u8; 1500]; // Adjust buffer size as needed
         let ip_packet = if addr.is_ipv4() {
-            let mut packet = Ipv4Hdr::new();
+            let mut packet = Ipv4Hdr {
+                version: 4,
+                header_length: 5,
+                total_length: 40,
+                ttl,
+                protocol: IpProto::Tcp,
+                source: self.listen_addr.ip().to_ipv4().unwrap(),
+                destination: addr.ip().to_ipv4().unwrap(),
+                ..Default::default()
+            };
             packet.version = 4;
             packet.header_length = 5;
             packet.total_length = 40; // Adjust as needed
             packet.ttl = ttl;
-            packet.protocol = network_types::ip::Protocol::Tcp;
+            packet.protocol = IpProto::Tcp;
             packet.source = self.listen_addr.ip().to_ipv4().unwrap();
             packet.destination = addr.ip().to_ipv4().unwrap();
             packet
         } else {
-            let mut packet = Ipv6Hdr::new();
+            let mut packet = Ipv6Hdr {
+                version: 6,
+                hop_limit: ttl,
+                next_header: IpProto::Tcp,
+                source: self.listen_addr.ip().to_ipv6().unwrap(),
+                destination: addr.ip().to_ipv6().unwrap(),
+                ..Default::default()
+            };
             packet.version = 6;
             packet.hop_limit = ttl;
-            packet.next_header = network_types::ip::Protocol::Tcp;
+            packet.next_header = IpProto::Tcp;
             packet.source = self.listen_addr.ip().to_ipv6().unwrap();
             packet.destination = addr.ip().to_ipv6().unwrap();
             packet
         };
 
-        let mut tcp_packet = TcpHdr::new();
+        let mut tcp_packet = TcpHdr {
+            source_port: self.listen_addr.port(),
+            destination_port: addr.port(),
+            sequence_number: seq,
+            acknowledgment_number: ack,
+            flags: 0x10, // ACK flag
+            window_size: 0xffff,
+            ..Default::default()
+        };
         tcp_packet.source_port = self.listen_addr.port();
         tcp_packet.destination_port = addr.port();
         tcp_packet.sequence_number = seq;
@@ -243,7 +267,7 @@ impl TraceHandle {
         Ok((ack_seq, seq))
     }
 
-    pub async fn hop_stream(&self) -> anyhow::Result<impl Stream<Item = anyhow::Result<Hop>>> {
+    pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = anyhow::Result<Hop>> + 'a> {
         let (mut ack_seq, mut seq) =
             timeout(Duration::from_secs(5), self.wait_for_initial_ack()).await??;
 
