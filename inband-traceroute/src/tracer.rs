@@ -1,4 +1,5 @@
 use anyhow::Context;
+use rand::{Rng, rngs::OsRng};
 use log::info;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
@@ -41,7 +42,7 @@ pub struct TraceHandle {
 impl TraceHandle {
     /// Create a new `TraceHandle` and register it
     pub fn new(tracer: Arc<Tracer>) -> Self {
-        let trace_id = 0;
+        let trace_id = OsRng.gen();
 
         Self {
             tracer,
