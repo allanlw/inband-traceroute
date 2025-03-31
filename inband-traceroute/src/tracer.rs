@@ -3,15 +3,12 @@ use async_stream::try_stream;
 use futures::stream::{self, Stream};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
+use pnet::packet::{
+    ip::IpNextHeaderProtocols, ipv4::MutableIpv4Packet, ipv6::MutableIpv6Packet,
+    tcp::MutableTcpPacket, Packet,
+};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
-use pnet::packet::{
-    ip::IpNextHeaderProtocols,
-    ipv4::MutableIpv4Packet,
-    ipv6::MutableIpv6Packet,
-    tcp::MutableTcpPacket,
-    Packet,
-};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -54,7 +51,8 @@ impl Tracer {
     ) -> anyhow::Result<()> {
         for x in 0..=1 {
             for y in 0..=1 {
-                self.send_outbound_packet(addr, ttl, seq - x, ack - y).await?;
+                self.send_outbound_packet(addr, ttl, seq - x, ack - y)
+                    .await?;
             }
         }
         Ok(())
@@ -98,7 +96,9 @@ impl Tracer {
 
         // Serialize and send the packet
         let packet_size = ip_packet.packet_size() + tcp_packet.packet_size();
-        self.socket.send_to(&buf[..packet_size], &addr.into()).await?;
+        self.socket
+            .send_to(&buf[..packet_size], &addr.into())
+            .await?;
 
         Ok(())
     }
