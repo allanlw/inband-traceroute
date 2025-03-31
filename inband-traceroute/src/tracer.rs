@@ -3,10 +3,9 @@ use async_stream::try_stream;
 use futures::stream::{self, Stream};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
-use pnet::packet::{
-    ip::IpNextHeaderProtocols, ipv4::MutableIpv4Packet, ipv6::MutableIpv6Packet,
-    tcp::MutableTcpPacket, Packet,
-};
+use network_types::ip::{IpHeader, Ipv4Header, Ipv6Header};
+use network_types::tcp::TcpHeader;
+use network_types::Packet;
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
 use std::{
@@ -66,39 +65,37 @@ impl Tracer {
         ack: u32,
     ) -> anyhow::Result<()> {
         let mut buf = [0u8; 1500]; // Adjust buffer size as needed
-        let mut ip_packet = if addr.is_ipv4() {
-            let mut packet = MutableIpv4Packet::new(&mut buf).unwrap();
-            packet.set_version(4);
-            packet.set_header_length(5);
-            packet.set_total_length(40); // Adjust as needed
-            packet.set_ttl(ttl);
-            packet.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-            packet.set_source(self.listen_addr.ip());
-            packet.set_destination(addr.ip());
+        let ip_packet = if addr.is_ipv4() {
+            let mut packet = Ipv4Header::new();
+            packet.version = 4;
+            packet.header_length = 5;
+            packet.total_length = 40; // Adjust as needed
+            packet.ttl = ttl;
+            packet.protocol = network_types::ip::Protocol::Tcp;
+            packet.source = self.listen_addr.ip().to_ipv4().unwrap();
+            packet.destination = addr.ip().to_ipv4().unwrap();
             packet
         } else {
-            let mut packet = MutableIpv6Packet::new(&mut buf).unwrap();
-            packet.set_version(6);
-            packet.set_hop_limit(ttl);
-            packet.set_next_header(IpNextHeaderProtocols::Tcp);
-            packet.set_source(self.listen_addr.ip());
-            packet.set_destination(addr.ip());
+            let mut packet = Ipv6Header::new();
+            packet.version = 6;
+            packet.hop_limit = ttl;
+            packet.next_header = network_types::ip::Protocol::Tcp;
+            packet.source = self.listen_addr.ip().to_ipv6().unwrap();
+            packet.destination = addr.ip().to_ipv6().unwrap();
             packet
         };
 
-        let mut tcp_packet = MutableTcpPacket::new(&mut buf[ip_packet.packet_size()..]).unwrap();
-        tcp_packet.set_source(self.listen_addr.port());
-        tcp_packet.set_destination(addr.port());
-        tcp_packet.set_sequence(seq);
-        tcp_packet.set_acknowledgement(ack);
-        tcp_packet.set_flags(0x10); // ACK flag
-        tcp_packet.set_window(0xffff);
+        let mut tcp_packet = TcpHeader::new();
+        tcp_packet.source_port = self.listen_addr.port();
+        tcp_packet.destination_port = addr.port();
+        tcp_packet.sequence_number = seq;
+        tcp_packet.acknowledgment_number = ack;
+        tcp_packet.flags = 0x10; // ACK flag
+        tcp_packet.window_size = 0xffff;
 
         // Serialize and send the packet
-        let packet_size = ip_packet.packet_size() + tcp_packet.packet_size();
-        self.socket
-            .send_to(&buf[..packet_size], &addr.into())
-            .await?;
+        let packet_size = ip_packet.header_len() + tcp_packet.header_len();
+        self.socket.send_to(&buf[..packet_size], &addr.into()).await?;
 
         Ok(())
     }
