@@ -8,6 +8,7 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Weak},
 };
+use futures::stream::{self, Stream};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     Mutex, RwLock,
@@ -28,6 +29,31 @@ pub struct Tracer {
     pub trace_map: Arc<Mutex<TraceMap>>,
 
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
+}
+
+impl TraceHandle {
+    pub fn hop_stream(&self) -> impl Stream<Item = Hop> {
+        let receiver = self.receiver.clone();
+        stream::unfold(receiver, |mut receiver| async {
+            match receiver.recv().await {
+                Some(event) => {
+                    let hop = Hop {
+                        ttl: event.seq as u8,
+                        hop_type: match event.event_type {
+                            TraceEventType::TCP_ACK => HopType::TCPAck,
+                            TraceEventType::TCP_RST => HopType::TCPRST,
+                            // Add other mappings as needed
+                            _ => HopType::Timeout, // Default case
+                        },
+                        addr: Some(event.addr.into()), // Assuming conversion is implemented
+                        rtt: Duration::from_millis(event.ack_seq as u64), // Example conversion
+                    };
+                    Some((hop, receiver))
+                }
+                None => None,
+            }
+        })
+    }
 }
 
 impl Tracer {
