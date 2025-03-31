@@ -35,6 +35,8 @@ tower-http = {version = "0.6.2", features = ["trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features=["env-filter"] }
 
+rand = "0.8"
+
 [profile.release.package.inband-traceroute-ebpf]
 debug = 2
 codegen-units = 1
