@@ -111,7 +111,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                         },
                         ack_seq: u32::from_be(tcp_hdr.ack_seq),
                         seq: u32::from_be(tcp_hdr.seq),
-                        ip_version: ip_versoin,
+                        ip_version: ip_version,
                     };
 
                     info!(&ctx, "Sending event: {}", event.trace_id);
