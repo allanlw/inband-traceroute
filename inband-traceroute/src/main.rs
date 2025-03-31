@@ -19,8 +19,6 @@ use axum::{
     routing::get,
     Router,
 };
-use aya::{
-};
 use clap::Parser;
 use ebpf::start_event_processor;
 use log::{error, info};
@@ -46,9 +44,9 @@ struct Opt {
     #[arg(long = "ipv6", required_unless_present = "ipv4")]
     ipv6: Option<std::net::Ipv6Addr>,
 
-    /// Domains for TLS certificate
+    /// Domain for TLS certificate
     #[arg(short, long = "domain", required = true)]
-    domains: Vec<String>,
+    domain: String,
 
     /// Contact info for TLS certificate
     #[arg(short, long = "email")]
@@ -76,6 +74,7 @@ struct AppState {
     tracer_v6: Option<Arc<tracer::Tracer>>,
 }
 
+// TODO: Fix panics
 async fn index_handler<'a>(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     state: State<Arc<AppState>>,
@@ -86,13 +85,17 @@ async fn index_handler<'a>(
     }
     .expect("If we got a connection in this protocol, the program should have a tracer for it");
 
-    let trace_handle = Arc::new(TraceHandle::start_trace(tracer, remote).await);
+    let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
 
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=UTF-8")
         .body(Body::from_stream(stream! {
-            let trace_handle = trace_handle.clone();
+            let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
+            while let Some(hop) = hop_stream.next().await {
+                let hop = format!("{:?}\n", hop);
+                yield Ok::<Bytes, anyhow::Error>(hop.into());
+            }
 
             yield Ok::<Bytes, anyhow::Error>( format!("{:?}", trace_handle).into());
             sleep(Duration::from_secs(3)).await;
@@ -104,7 +107,7 @@ async fn index_handler<'a>(
 }
 
 fn setup_server(opt: &Opt, state: Arc<AppState>) {
-    let mut acme_state = AcmeConfig::new(opt.domains.clone())
+    let mut acme_state = AcmeConfig::new(vec![opt.domain.clone()])
         .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
         .cache_option(opt.cache_dir.clone().map(DirCache::new))
         .directory_lets_encrypt(opt.prod)
@@ -192,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V4(ipv4), opt.port),
                 opt.max_hops,
                 trace_map.clone(),
+                opt.domain.clone(),
             )
         })
         .transpose()
@@ -205,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V6(ipv6), opt.port),
                 opt.max_hops,
                 trace_map,
+                opt.domain.clone(),
             )
         })
         .transpose()

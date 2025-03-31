@@ -23,6 +23,8 @@ rustls-acme = { workspace = true, features = ["axum"] }
 tokio-stream = { workspace = true }
 axum-server = { workspace = true }
 async-stream = { workspace = true }
+futures = { workspace = true }
+network-types = { workspace = true }
 
 tower-http = { workspace = true , features = ["trace"] }
 tracing = { workspace = true }
@@ -31,6 +33,7 @@ tracing-subscriber = { workspace = true, features=["env-filter"] }
 
 rand = { workspace = true }
 bytes = { workspace = true }
+etherparse = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

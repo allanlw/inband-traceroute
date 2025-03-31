@@ -1,17 +1,15 @@
 use anyhow::Context;
-use async_stream::try_stream;
-use futures::stream::Stream;
+use async_stream::{stream, try_stream};
+use core::panic;
+use etherparse::PacketBuilder;
+use futures::{stream::Stream, SinkExt};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
-use network_types::{
-    ip::{Ipv4Hdr, Ipv6Hdr, IpProto},
-    tcp::TcpHdr,
-};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, Weak},
     time::Duration,
 };
@@ -31,6 +29,8 @@ use crate::{
 
 type TraceId = u32;
 
+const STEP_TIMEOUT: Duration = Duration::from_secs(2);
+
 #[derive(Debug)]
 pub struct Tracer {
     pub listen_addr: SocketAddr,
@@ -38,10 +38,35 @@ pub struct Tracer {
     pub socket: raw::AsyncWriteOnlyIPRawSocket,
     pub trace_map: Arc<Mutex<TraceMap>>,
 
+    domain: String,
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
 
 impl Tracer {
+    pub fn new(
+        listen_addr: SocketAddr,
+        max_hops: u8,
+        trace_map: Arc<Mutex<TraceMap>>,
+        hostname: String,
+    ) -> anyhow::Result<Self> {
+        let domain = match listen_addr {
+            SocketAddr::V4(_) => Domain::IPV4,
+            SocketAddr::V6(_) => Domain::IPV6,
+        };
+
+        let socket =
+            raw::AsyncWriteOnlyIPRawSocket::new(domain).context("failed to create raw socket")?;
+
+        Ok(Self {
+            listen_addr,
+            max_hops,
+            socket,
+            trace_map,
+            domain: hostname,
+            traces: RwLock::new(HashMap::new()),
+        })
+    }
+
     pub async fn send_outbound_packet_burst(
         &self,
         addr: SocketAddr,
@@ -63,80 +88,31 @@ impl Tracer {
         addr: SocketAddr,
         ttl: u8,
         seq: u32,
-        ack: u32,
+        seq_ack: u32,
     ) -> anyhow::Result<()> {
-        let mut buf = [0u8; 1500]; // Adjust buffer size as needed
-        let ip_packet = if addr.is_ipv4() {
-            Ipv4Hdr {
-                tot_len: 40,
-                ttl,
-                proto: IpProto::Tcp as u8,
-                saddr: u32::from_be_bytes(self.listen_addr.ip().to_ipv4().unwrap().octets()),
-                daddr: u32::from_be_bytes(addr.ip().to_ipv4().unwrap().octets()),
-                ..Default::default()
+        let builder = match (addr.ip(), self.listen_addr.ip()) {
+            (IpAddr::V4(remote), IpAddr::V4(local)) => {
+                PacketBuilder::ipv4(local.octets(), remote.octets(), ttl)
             }
-        } else {
-            Ipv6Hdr {
-                hop_limit: ttl,
-                next_hdr: IpProto::Tcp as u8,
-                saddr: self.listen_addr.ip().to_ipv6().unwrap().octets(),
-                daddr: addr.ip().to_ipv6().unwrap().octets(),
-                ..Default::default()
+            (IpAddr::V6(remote), IpAddr::V6(local)) => {
+                PacketBuilder::ipv6(local.octets(), remote.octets(), ttl)
             }
-        };
+            _ => {
+                panic!("IP address family mismatch");
+            }
+        }
+        .tcp(self.listen_addr.port(), addr.port(), seq, 0xffff)
+        .ack(seq_ack);
 
-        let mut tcp_packet = TcpHdr {
-            source: self.listen_addr.port(),
-            dest: addr.port(),
-            seq,
-            ack_seq: ack,
-            res1: 0,
-            doff: 5,
-            fin: 0,
-            syn: 0,
-            rst: 0,
-            psh: 0,
-            ack: 1,
-            urg: 0,
-            ece: 0,
-            cwr: 0,
-            window: 0xffff,
-            check: 0,
-            urg_ptr: 0,
-            ..Default::default()
-        };
+        let payload = self.domain.as_bytes();
 
-        // Serialize and send the packet
-        let packet_size = ip_packet.header_len() + tcp_packet.header_len();
-        self.socket
-            .send_to(&buf[..packet_size], &addr.into())
-            .await?;
+        let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
+
+        builder.write(&mut result, &payload).unwrap();
+
+        self.socket.send_to(result.as_slice(), &addr.into()).await?;
 
         Ok(())
-    }
-}
-
-impl Tracer {
-    pub fn new(
-        listen_addr: SocketAddr,
-        max_hops: u8,
-        trace_map: Arc<Mutex<TraceMap>>,
-    ) -> anyhow::Result<Self> {
-        let domain = match listen_addr {
-            SocketAddr::V4(_) => Domain::IPV4,
-            SocketAddr::V6(_) => Domain::IPV6,
-        };
-
-        let socket =
-            raw::AsyncWriteOnlyIPRawSocket::new(domain).context("failed to create raw socket")?;
-
-        Ok(Self {
-            listen_addr,
-            max_hops,
-            socket,
-            trace_map,
-            traces: RwLock::new(HashMap::new()),
-        })
     }
 
     pub async fn process_event(&self, event: TraceEvent) -> anyhow::Result<()> {
@@ -168,12 +144,6 @@ fn std_socket_addr_to_ebpf(addr: SocketAddr) -> inband_traceroute_common::Socket
         addr: std_ipaddr_to_ebpf(addr.ip()),
         port: addr.port(),
     }
-}
-
-#[derive(Debug)]
-pub struct TCPState {
-    pub seq: u32,
-    pub ack_seq: u32,
 }
 
 #[derive(Debug)]
@@ -255,24 +225,59 @@ impl TraceHandle {
         Ok((ack_seq, seq))
     }
 
-    pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = anyhow::Result<Hop>> + 'a> {
+    pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
         let (mut ack_seq, mut seq) =
             timeout(Duration::from_secs(5), self.wait_for_initial_ack()).await??;
 
-        return Ok(try_stream! {
-            yield Hop {
-                ttl: 0,
-                hop_type: HopType::Origin,
-                addr: None,
-                rtt: Duration::from_millis(0),
-            };
+        let stream = stream! {
+                yield Hop {
+                    ttl: 0,
+                    hop_type: HopType::Origin,
+                    addr: Some(self.tracer.listen_addr.ip()),
+                    rtt: Duration::from_millis(0),
+                };
 
-            for ttl in 1..=self.tracer.max_hops {
-                // send packet burst
+                let mut receiver = self.receiver.lock().await;
 
-                // wait for response
-            }
-        });
+                for ttl in 1..=self.tracer.max_hops {
+                    loop {
+                        let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
+
+                        if let Err(_) = res {
+                                yield Hop {
+                                    ttl,
+                                    hop_type: HopType::Timeout,
+                                    addr: None,
+                                    rtt: Duration::from_millis(0),
+                                };
+                            continue;
+                        }
+
+                        let event = res.unwrap();
+                        if event.is_none() {
+                            panic!("Receiver channel closed before ack was received");
+                        }
+                        let event = event.unwrap();
+                        if event.event_type == TraceEventType::TcpAck {
+                            ack_seq = event.ack_seq;
+                            seq = event.seq;
+                            break;
+                        } else if event.event_type == TraceEventType::TcpRst {
+                            yield Hop {
+                                ttl,
+                                hop_type: HopType::TCPRST,
+                                addr: Some(self.remote.ip()),
+                                rtt: Duration::from_millis(0),
+                            };
+                            break;
+                        } else {
+                            panic!("Received unexpected event type: {:?}", event.event_type);
+                        }
+                    }
+                }
+        };
+
+        return Ok(stream);
     }
 }
 

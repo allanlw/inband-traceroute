@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 #[derive(Debug)]
-enum HopType {
+pub(crate) enum HopType {
     Timeout,
     TCPRST,
     TCPAck,
@@ -23,11 +23,12 @@ impl fmt::Display for HopType {
     }
 }
 
-struct Hop {
-    ttl: u8,
-    hop_type: HopType,
-    addr: Option<IpAddr>,
-    rtt: Duration,
+#[derive(Debug)]
+pub(crate) struct Hop {
+    pub(crate) ttl: u8,
+    pub(crate) hop_type: HopType,
+    pub(crate) addr: Option<IpAddr>,
+    pub(crate) rtt: Duration,
 }
 
 impl fmt::Display for Hop {

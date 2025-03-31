@@ -37,6 +37,8 @@ tracing-subscriber = { version = "0.3.19", features=["env-filter"] }
 
 bytes = "1"
 rand = "0.8"
+futures = "0.3.31"
+etherparse = "0.17.0"
 
 [profile.release.package.inband-traceroute-ebpf]
 debug = 2

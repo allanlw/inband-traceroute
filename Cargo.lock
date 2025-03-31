@@ -110,6 +110,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+
+[[package]]
 name = "asn1-rs"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -844,6 +850,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "etherparse"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b14e4ac78394e3ea04edbbc412099cf54f2f52ded51efb79c466a282729399d2"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1217,6 +1232,8 @@ dependencies = [
  "aya-log",
  "bytes",
  "clap",
+ "etherparse",
+ "futures",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -1224,6 +1241,7 @@ dependencies = [
  "inband-traceroute-ebpf",
  "libc",
  "log",
+ "network-types",
  "rand",
  "rustls-acme",
  "socket2 0.4.10",
