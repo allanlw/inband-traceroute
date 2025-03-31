@@ -3,17 +3,31 @@
 
 use core::mem;
 
-use aya_ebpf::{bindings::xdp_action, bpf_printk, macros::xdp, programs::XdpContext};
-use aya_log_ebpf::{info, warn};
+use aya_ebpf::{
+    bindings::xdp_action,
+    macros::{map, xdp},
+    maps::{HashMap, PerfEventArray},
+    programs::XdpContext,
+};
+use aya_log_ebpf::info;
+use inband_traceroute_common::{IPAddr, IPVersion, SocketAddr, TraceEvent};
 use network_types::{
     eth::{EthHdr, EtherType},
-    ip::{in6_addr, in6_u, IpProto, Ipv4Hdr, Ipv6Hdr},
+    ip::{IpProto, Ipv4Hdr, Ipv6Hdr},
     tcp::TcpHdr,
 };
 
 const PORT: u16 = 443;
-const IPV4_LISTEN_ADDR: u32 = 177340418; //  10.146.0.2
+const IPV4_LISTEN_ADDR: u32 = u32::from_be((10 << 24) + (146 << 16) + (0 << 8) + (2)); //  10.146.0.2
 const IPV6_LISTEN_ADDR: [u32; 4] = [1638438, 1644253248, 0, 0]; // 2600:1900:4050:162::
+
+const MAX_TRACES: u32 = 1024;
+
+#[map]
+static EVENTS: PerfEventArray<TraceEvent> = PerfEventArray::new(0);
+
+#[map]
+static TRACES: HashMap<SocketAddr, u32> = HashMap::with_max_entries(MAX_TRACES, 0);
 
 #[xdp]
 pub fn inband_traceroute(ctx: XdpContext) -> u32 {
@@ -23,6 +37,8 @@ pub fn inband_traceroute(ctx: XdpContext) -> u32 {
     }
 }
 
+// Basically we ignore all packets that are not destined for our server (protocol, address, port)
+// Then, ignore all packets that are not associated with an active trace
 fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
     let ethhdr: &EthHdr = ptr_at(&ctx, 0)?;
     let ether_type = ethhdr.ether_type;
@@ -30,16 +46,23 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
     let mut layer4_protocol: Option<IpProto> = None;
     let mut layer4_offset: Option<usize> = None;
 
+    let mut src_addr: SocketAddr = SocketAddr::default();
+
+    let mut ip_versoin = IPVersion::IPV4;
+
     match ether_type {
         EtherType::Ipv4 => {
             let ipv4hdr: &Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
-            let dst_addr = u32::from_be(ipv4hdr.dst_addr);
+            let dst_addr = ipv4hdr.dst_addr;
             if dst_addr != IPV4_LISTEN_ADDR {
                 return Ok(());
             }
 
+            ip_versoin = IPVersion::IPV4;
             layer4_protocol = Some(ipv4hdr.proto);
             layer4_offset = Some(EthHdr::LEN + Ipv4Hdr::LEN);
+
+            src_addr.addr = IPAddr::new_v4(ipv4hdr.src_addr.to_le_bytes());
         }
         EtherType::Ipv6 => {
             let ipv6hdr: &Ipv6Hdr = ptr_at(&ctx, EthHdr::LEN)?;
@@ -47,8 +70,11 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 return Ok(());
             }
 
+            ip_versoin = IPVersion::IPV6;
             layer4_protocol = Some(ipv6hdr.next_hdr);
             layer4_offset = Some(EthHdr::LEN + Ipv6Hdr::LEN);
+
+            src_addr.addr = IPAddr::new_v6(unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 });
         }
         _ => {
             return Ok(());
@@ -59,26 +85,48 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
         Some(IpProto::Tcp) => {
             let tcp_hdr: &TcpHdr = ptr_at(&ctx, layer4_offset.unwrap())?;
             let dst_port = u16::from_be(tcp_hdr.dest);
+
             if dst_port != PORT {
                 return Ok(());
             }
 
-            info!(
-                &ctx,
-                "Received {} TCP packet",
-                if ether_type == EtherType::Ipv4 {
-                    "IPv4"
-                } else {
-                    "IPv6"
+            // Ignore packets that are not TCP SYN or RST now to avoid map lookups
+            if tcp_hdr.ack() == 0 && tcp_hdr.rst() == 0 {
+                return Ok(());
+            }
+
+            src_addr.port = u16::from_be(tcp_hdr.source);
+            let trace_id = unsafe { TRACES.get(&src_addr) };
+            match trace_id {
+                None => {
+                    return Ok(());
                 }
-            );
+                Some(trace_id) => {
+                    // Found a trace, send event
+                    let event = TraceEvent {
+                        trace_id: *trace_id,
+                        event_type: if tcp_hdr.syn() != 0 {
+                            inband_traceroute_common::TraceEventType::TCP_SYN
+                        } else {
+                            inband_traceroute_common::TraceEventType::TCP_RST
+                        },
+                        ack_seq: u32::from_be(tcp_hdr.ack_seq),
+                        seq: u32::from_be(tcp_hdr.seq),
+                        ip_version: ip_versoin,
+                    };
+
+                    info!(&ctx, "Sending event: {}", event.trace_id);
+
+                    EVENTS.output(&ctx, &event, 0)
+                }
+            }
+
+            return Ok(());
         }
         _ => {
             return Ok(());
         }
     }
-
-    return Ok(());
 }
 
 #[inline(always)]

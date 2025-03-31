@@ -1,8 +1,10 @@
+mod ebpf;
 mod raw;
 mod tracer;
 
 use std::{
     net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    ops::DerefMut,
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -12,21 +14,24 @@ use anyhow::Context;
 use async_stream::stream;
 use axum::{
     body::{Body, Bytes},
-    extract::State,
+    extract::{ConnectInfo, State},
     response::Response,
     routing::get,
     Router,
 };
 use aya::{
+    maps::{AsyncPerfEventArray, HashMap, MapData},
     programs::{Xdp, XdpFlags},
     Ebpf,
 };
 use clap::Parser;
+use ebpf::start_event_processor;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
-use tokio::{signal, time::sleep};
+use tokio::{signal, sync::Mutex, time::sleep};
 use tokio_stream::StreamExt;
 use tower_http::trace::{self, TraceLayer};
+use tracer::TraceHandle;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
@@ -68,33 +73,31 @@ struct Opt {
     max_hops: u8,
 }
 
-fn setup_ebpf(opt: &Opt) -> anyhow::Result<Ebpf> {
-    let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
-        env!("OUT_DIR"),
-        "/inband-traceroute"
-    )))?;
-    aya_log::EbpfLogger::init(&mut ebpf)?;
-
-    let program: &mut Xdp = ebpf.program_mut("inband_traceroute").unwrap().try_into()?;
-    program.load()?;
-    program
-        .attach(&opt.iface, XdpFlags::SKB_MODE)
-        .context("failed to attach the XDP program - wrong mode?")?;
-
-    Ok(ebpf)
-}
-
+#[derive(Debug)]
 struct AppState {
-    tracer_v4: Option<tracer::Tracer>,
-    tracer_v6: Option<tracer::Tracer>,
+    tracer_v4: Option<Arc<tracer::Tracer>>,
+    tracer_v6: Option<Arc<tracer::Tracer>>,
 }
 
-async fn index_handler(state: State<Arc<AppState>>) -> Response {
+async fn index_handler<'a>(
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    state: State<Arc<AppState>>,
+) -> Response {
+    let tracer = match remote {
+        SocketAddr::V4(_) => state.tracer_v4.clone(),
+        SocketAddr::V6(_) => state.tracer_v6.clone(),
+    }
+    .expect("If we got a connection in this protocol, the program should have a tracer for it");
+
+    let trace_handle = Arc::new(TraceHandle::start_trace(tracer, remote).await);
+
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=UTF-8")
         .body(Body::from_stream(stream! {
-            yield Ok::<Bytes, anyhow::Error>( format!("{:?}",state.tracer_v4).into());
+            let trace_handle = trace_handle.clone();
+
+            yield Ok::<Bytes, anyhow::Error>( format!("{:?}", trace_handle).into());
             sleep(Duration::from_secs(3)).await;
             yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"This is a simple HTTP server.\n"));
             sleep(Duration::from_secs(3)).await;
@@ -145,7 +148,9 @@ fn setup_server(opt: &Opt, state: Arc<AppState>) {
 
     for addr in addresses {
         info!("Listening on {}", addr);
-        let service = app.clone().into_make_service();
+        let service = app
+            .clone()
+            .into_make_service_with_connect_info::<SocketAddr>();
         let acceptor = acceptor.clone();
         tokio::task::spawn(async move {
             axum_server::bind(addr)
@@ -173,29 +178,48 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting inband-traceroute...");
 
     info!("Using interface: {}", opt.iface);
+
+    info!("Loading eBPF program...");
+
+    // Note: program will be detached when dropped
+    let (mut ebpf, trace_map) = ebpf::setup_ebpf(&opt.iface).context("EBPF setup failed")?;
+
+    let trace_map = Arc::new(Mutex::new(trace_map));
+
     info!("Initializing raw sockets...");
 
     let tracer_v4 = opt
         .ipv4
-        .map(|ipv4| tracer::Tracer::new(SocketAddr::new(IpAddr::V4(ipv4), opt.port), opt.max_hops))
+        .map(|ipv4| {
+            tracer::Tracer::new(
+                SocketAddr::new(IpAddr::V4(ipv4), opt.port),
+                opt.max_hops,
+                trace_map.clone(),
+            )
+        })
         .transpose()
-        .context("failed to create IPv4 tracer")?;
+        .context("failed to create IPv4 tracer")?
+        .map(Arc::new);
 
     let tracer_v6 = opt
         .ipv6
-        .map(|ipv6| tracer::Tracer::new(SocketAddr::new(IpAddr::V6(ipv6), opt.port), opt.max_hops))
+        .map(|ipv6| {
+            tracer::Tracer::new(
+                SocketAddr::new(IpAddr::V6(ipv6), opt.port),
+                opt.max_hops,
+                trace_map,
+            )
+        })
         .transpose()
-        .context("Failed to create IPv6 tracer")?;
+        .context("Failed to create IPv6 tracer")?
+        .map(Arc::new);
+
+    start_event_processor(&mut ebpf, tracer_v4.clone(), tracer_v6.clone())?;
 
     let state = Arc::new(AppState {
         tracer_v4,
         tracer_v6,
     });
-
-    info!("Loading eBPF program...");
-
-    // Note: program will be detached when dropped
-    let _ebpf = setup_ebpf(&opt)?;
 
     info!("Setting up server...");
 
