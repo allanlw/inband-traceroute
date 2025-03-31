@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
 use libc::{IPPROTO_RAW, SOCK_RAW};
 use socket2::{Domain, SockAddr, Socket};
 use tokio::io::unix::AsyncFd;

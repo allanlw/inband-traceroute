@@ -45,9 +45,6 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
 
     let mut src_addr: SocketAddr = SocketAddr::default();
 
-    let mut layer4_protocol: Option<IpProto> = None;
-    let mut layer4_offset: Option<usize> = None;
-    let mut ip_version = IPVersion::IPV4;
 
     match ether_type {
         EtherType::Ipv4 => {

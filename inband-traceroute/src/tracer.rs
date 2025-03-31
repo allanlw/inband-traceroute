@@ -1,6 +1,6 @@
 use anyhow::Context;
 use async_stream::try_stream;
-use futures::stream::{self, Stream};
+use futures::stream::Stream;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
 use network_types::{
@@ -24,7 +24,7 @@ use tokio::{
 };
 
 use crate::{
-    ebpf::{self, TraceMap},
+    ebpf::TraceMap,
     hop::{Hop, HopType},
     raw,
 };
@@ -67,56 +67,44 @@ impl Tracer {
     ) -> anyhow::Result<()> {
         let mut buf = [0u8; 1500]; // Adjust buffer size as needed
         let ip_packet = if addr.is_ipv4() {
-            let mut packet = Ipv4Hdr {
-                version: 4,
-                header_length: 5,
-                total_length: 40,
+            Ipv4Hdr {
+                tot_len: 40,
                 ttl,
-                protocol: IpProto::Tcp,
-                source: self.listen_addr.ip().to_ipv4().unwrap(),
-                destination: addr.ip().to_ipv4().unwrap(),
+                proto: IpProto::Tcp as u8,
+                saddr: u32::from_be_bytes(self.listen_addr.ip().to_ipv4().unwrap().octets()),
+                daddr: u32::from_be_bytes(addr.ip().to_ipv4().unwrap().octets()),
                 ..Default::default()
-            };
-            packet.version = 4;
-            packet.header_length = 5;
-            packet.total_length = 40; // Adjust as needed
-            packet.ttl = ttl;
-            packet.protocol = IpProto::Tcp;
-            packet.source = self.listen_addr.ip().to_ipv4().unwrap();
-            packet.destination = addr.ip().to_ipv4().unwrap();
-            packet
+            }
         } else {
-            let mut packet = Ipv6Hdr {
-                version: 6,
+            Ipv6Hdr {
                 hop_limit: ttl,
-                next_header: IpProto::Tcp,
-                source: self.listen_addr.ip().to_ipv6().unwrap(),
-                destination: addr.ip().to_ipv6().unwrap(),
+                next_hdr: IpProto::Tcp as u8,
+                saddr: self.listen_addr.ip().to_ipv6().unwrap().octets(),
+                daddr: addr.ip().to_ipv6().unwrap().octets(),
                 ..Default::default()
-            };
-            packet.version = 6;
-            packet.hop_limit = ttl;
-            packet.next_header = IpProto::Tcp;
-            packet.source = self.listen_addr.ip().to_ipv6().unwrap();
-            packet.destination = addr.ip().to_ipv6().unwrap();
-            packet
+            }
         };
 
         let mut tcp_packet = TcpHdr {
-            source_port: self.listen_addr.port(),
-            destination_port: addr.port(),
-            sequence_number: seq,
-            acknowledgment_number: ack,
-            flags: 0x10, // ACK flag
-            window_size: 0xffff,
+            source: self.listen_addr.port(),
+            dest: addr.port(),
+            seq,
+            ack_seq: ack,
+            res1: 0,
+            doff: 5,
+            fin: 0,
+            syn: 0,
+            rst: 0,
+            psh: 0,
+            ack: 1,
+            urg: 0,
+            ece: 0,
+            cwr: 0,
+            window: 0xffff,
+            check: 0,
+            urg_ptr: 0,
             ..Default::default()
         };
-        tcp_packet.source_port = self.listen_addr.port();
-        tcp_packet.destination_port = addr.port();
-        tcp_packet.sequence_number = seq;
-        tcp_packet.acknowledgment_number = ack;
-        tcp_packet.flags = 0x10; // ACK flag
-        tcp_packet.window_size = 0xffff;
 
         // Serialize and send the packet
         let packet_size = ip_packet.header_len() + tcp_packet.header_len();
@@ -248,7 +236,7 @@ impl TraceHandle {
         loop {
             match receiver.recv().await {
                 Some(event) => {
-                    if event.event_type == TraceEventType::TCP_ACK {
+                    if event.event_type == TraceEventType::TcpAck {
                         ack_seq = event.ack_seq;
                         seq = event.seq;
                         break;

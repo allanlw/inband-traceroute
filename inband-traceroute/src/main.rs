@@ -4,8 +4,7 @@ mod raw;
 mod tracer;
 
 use std::{
-    net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6},
-    ops::DerefMut,
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -21,9 +20,6 @@ use axum::{
     Router,
 };
 use aya::{
-    maps::{AsyncPerfEventArray, HashMap, MapData},
-    programs::{Xdp, XdpFlags},
-    Ebpf,
 };
 use clap::Parser;
 use ebpf::start_event_processor;

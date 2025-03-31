@@ -1,4 +1,4 @@
-use std::{fmt, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use aya::{
@@ -10,11 +10,10 @@ use bytes::BytesMut;
 use inband_traceroute_common::TraceEvent;
 use log::{info, warn};
 use tokio::{
-    sync::{Mutex, RwLock},
     task,
 };
 
-use crate::tracer::{self, Tracer};
+use crate::tracer::Tracer;
 
 pub(crate) type EventMap = AsyncPerfEventArray<MapData>;
 pub(crate) type TraceMap = HashMap<MapData, inband_traceroute_common::SocketAddr, u32>;
