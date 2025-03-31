@@ -5,6 +5,13 @@ use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, warn};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
+use pnet::packet::{
+    ip::IpNextHeaderProtocols,
+    ipv4::MutableIpv4Packet,
+    ipv6::MutableIpv6Packet,
+    tcp::MutableTcpPacket,
+    Packet,
+};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -35,6 +42,66 @@ pub struct Tracer {
     pub trace_map: Arc<Mutex<TraceMap>>,
 
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
+}
+
+impl Tracer {
+    pub async fn send_outbound_packet_burst(
+        &self,
+        addr: SocketAddr,
+        ttl: u8,
+        seq: u32,
+        ack: u32,
+    ) -> anyhow::Result<()> {
+        for x in 0..=1 {
+            for y in 0..=1 {
+                self.send_outbound_packet(addr, ttl, seq - x, ack - y).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn send_outbound_packet(
+        &self,
+        addr: SocketAddr,
+        ttl: u8,
+        seq: u32,
+        ack: u32,
+    ) -> anyhow::Result<()> {
+        let mut buf = [0u8; 1500]; // Adjust buffer size as needed
+        let mut ip_packet = if addr.is_ipv4() {
+            let mut packet = MutableIpv4Packet::new(&mut buf).unwrap();
+            packet.set_version(4);
+            packet.set_header_length(5);
+            packet.set_total_length(40); // Adjust as needed
+            packet.set_ttl(ttl);
+            packet.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+            packet.set_source(self.listen_addr.ip());
+            packet.set_destination(addr.ip());
+            packet
+        } else {
+            let mut packet = MutableIpv6Packet::new(&mut buf).unwrap();
+            packet.set_version(6);
+            packet.set_hop_limit(ttl);
+            packet.set_next_header(IpNextHeaderProtocols::Tcp);
+            packet.set_source(self.listen_addr.ip());
+            packet.set_destination(addr.ip());
+            packet
+        };
+
+        let mut tcp_packet = MutableTcpPacket::new(&mut buf[ip_packet.packet_size()..]).unwrap();
+        tcp_packet.set_source(self.listen_addr.port());
+        tcp_packet.set_destination(addr.port());
+        tcp_packet.set_sequence(seq);
+        tcp_packet.set_acknowledgement(ack);
+        tcp_packet.set_flags(0x10); // ACK flag
+        tcp_packet.set_window(0xffff);
+
+        // Serialize and send the packet
+        let packet_size = ip_packet.packet_size() + tcp_packet.packet_size();
+        self.socket.send_to(&buf[..packet_size], &addr.into()).await?;
+
+        Ok(())
+    }
 }
 
 impl Tracer {
