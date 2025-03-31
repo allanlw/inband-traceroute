@@ -1,9 +1,12 @@
-mod raw;
-
 use anyhow::Context;
 use log::info;
 use socket2::{Domain, Protocol, Socket, Type};
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
+
+use crate::raw;
 
 #[derive(Debug)]
 pub struct Tracer {
@@ -27,5 +30,22 @@ impl Tracer {
             max_hops,
             socket,
         })
+    }
+}
+
+pub struct TraceHandle {
+    tracer: Arc<Tracer>,
+    trace_id: u32,
+}
+
+impl TraceHandle {
+    /// Create a new `TraceHandle` and register it
+    pub fn new(tracer: Arc<Tracer>) -> Self {
+        let trace_id = 0;
+
+        Self {
+            tracer,
+            trace_id: todo!(),
+        }
     }
 }
