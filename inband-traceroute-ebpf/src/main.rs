@@ -45,6 +45,10 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
 
     let mut src_addr: SocketAddr = SocketAddr::default();
 
+    let mut layer4_protocol: Option<IpProto> = None;
+    let mut layer4_offset: Option<usize> = None;
+    let mut ip_version = IPVersion::IPV4;
+
     match ether_type {
         EtherType::Ipv4 => {
             let ipv4hdr: &Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
@@ -53,7 +57,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 return Ok(());
             }
 
-            ip_versoin = IPVersion::IPV4;
+            ip_version = IPVersion::IPV4;
             layer4_protocol = Some(ipv4hdr.proto);
             layer4_offset = Some(EthHdr::LEN + Ipv4Hdr::LEN);
 
@@ -65,7 +69,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 return Ok(());
             }
 
-            ip_versoin = IPVersion::IPV6;
+            ip_version = IPVersion::IPV6;
             layer4_protocol = Some(ipv6hdr.next_hdr);
             layer4_offset = Some(EthHdr::LEN + Ipv6Hdr::LEN);
 
@@ -101,9 +105,9 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                     let event = TraceEvent {
                         trace_id: *trace_id,
                         event_type: if tcp_hdr.ack() != 0 {
-                            inband_traceroute_common::TraceEventType::TCP_ACK
+                            inband_traceroute_common::TraceEventType::TcpAck
                         } else {
-                            inband_traceroute_common::TraceEventType::TCP_RST
+                            inband_traceroute_common::TraceEventType::TcpRst
                         },
                         ack_seq: u32::from_be(tcp_hdr.ack_seq),
                         seq: u32::from_be(tcp_hdr.seq),
