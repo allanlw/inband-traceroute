@@ -42,7 +42,7 @@ pub struct TraceHandle {
 impl TraceHandle {
     /// Create a new `TraceHandle` and register it
     pub fn new(tracer: Arc<Tracer>) -> Self {
-        let trace_id = OsRng.gen();
+        let trace_id: u32 = OsRng.gen();
 
         Self {
             tracer,
