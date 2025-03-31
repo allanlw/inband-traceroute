@@ -1,15 +1,24 @@
 use anyhow::Context;
-use inband_traceroute_common::IPAddr;
-use log::debug;
+use inband_traceroute_common::{IPAddr, TraceEvent};
+use log::{debug, warn};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{Arc, Weak},
+};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Mutex, RwLock,
+};
 
 use crate::{
     ebpf::{self, TraceMap},
     raw,
 };
+
+type TraceId = u32;
 
 #[derive(Debug)]
 pub struct Tracer {
@@ -17,6 +26,8 @@ pub struct Tracer {
     pub max_hops: u8,
     pub socket: raw::AsyncWriteOnlyIPRawSocket,
     pub trace_map: Arc<Mutex<TraceMap>>,
+
+    traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
 
 impl Tracer {
@@ -38,16 +49,25 @@ impl Tracer {
             max_hops,
             socket,
             trace_map,
+            traces: RwLock::new(HashMap::new()),
         })
     }
-}
 
-#[derive(Debug)]
-pub struct TraceHandle {
-    tracer: Arc<Tracer>,
-    trace_id: u32,
-    remote: SocketAddr,
-    key: inband_traceroute_common::SocketAddr,
+    pub async fn process_event(&self, event: TraceEvent) -> anyhow::Result<()> {
+        let trace_id = event.trace_id;
+        let traces = self.traces.read().await;
+
+        if let Some(trace) = traces.get(&trace_id) {
+            if let Some(trace) = trace.upgrade() {
+                trace.sender.send(event)?;
+            } else {
+                warn!("Trace {} is no longer valid", trace_id);
+            }
+        } else {
+            warn!("Trace {} not found", trace_id);
+        }
+        Ok(())
+    }
 }
 
 fn std_ipaddr_to_ebpf(addr: std::net::IpAddr) -> IPAddr {
@@ -64,12 +84,43 @@ fn std_socket_addr_to_ebpf(addr: SocketAddr) -> inband_traceroute_common::Socket
     }
 }
 
+#[derive(Debug)]
+pub struct TraceHandle {
+    tracer: Arc<Tracer>, // Must be a strong reference to keep the tracer alive
+    trace_id: u32,
+    remote: SocketAddr,
+    key: inband_traceroute_common::SocketAddr,
+    sender: UnboundedSender<TraceEvent>,
+    receiver: UnboundedReceiver<TraceEvent>,
+}
+
 impl TraceHandle {
     /// Create a new `TraceHandle` and register it
-    pub async fn start_trace(tracer: Arc<Tracer>, remote: SocketAddr) -> anyhow::Result<Self> {
+    pub async fn start_trace(tracer: Arc<Tracer>, remote: SocketAddr) -> anyhow::Result<Arc<Self>> {
         let trace_id: u32 = OsRng.gen();
 
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<TraceEvent>();
+
         let key = std_socket_addr_to_ebpf(remote);
+        let mut res = Arc::new(Self {
+            tracer: tracer.clone(),
+            trace_id,
+            remote,
+            key,
+            sender,
+            receiver,
+        });
+
+        {
+            let mut traces = tracer.traces.write().await;
+
+            // Just in case of collisions, we will keep generating new trace ids until we find a free one
+            while let Some(_) = traces.get(&trace_id) {
+                Arc::get_mut(&mut res).unwrap().trace_id = OsRng.gen();
+            }
+
+            traces.insert(trace_id, Arc::downgrade(&res));
+        }
 
         {
             let mut trace_map = tracer.trace_map.lock().await;
@@ -81,12 +132,7 @@ impl TraceHandle {
                 .context("failed to register trace")?;
         }
 
-        Ok(Self {
-            tracer,
-            trace_id,
-            remote,
-            key,
-        })
+        Ok(res)
     }
 }
 

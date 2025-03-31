@@ -1,4 +1,5 @@
 mod ebpf;
+mod hop;
 mod raw;
 mod tracer;
 

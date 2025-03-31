@@ -105,8 +105,8 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                     // Found a trace, send event
                     let event = TraceEvent {
                         trace_id: *trace_id,
-                        event_type: if tcp_hdr.syn() != 0 {
-                            inband_traceroute_common::TraceEventType::TCP_SYN
+                        event_type: if tcp_hdr.ack() != 0 {
+                            inband_traceroute_common::TraceEventType::TCP_ACK
                         } else {
                             inband_traceroute_common::TraceEventType::TCP_RST
                         },

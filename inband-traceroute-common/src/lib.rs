@@ -15,7 +15,7 @@ pub struct TraceEvent {
 #[repr(u8)]
 #[derive(Debug, Copy, Clone)]
 pub enum TraceEventType {
-    TCP_SYN,
+    TCP_ACK,
     TCP_RST,
 }
 
