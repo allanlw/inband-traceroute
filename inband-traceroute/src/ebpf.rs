@@ -9,9 +9,7 @@ use aya::{
 use bytes::BytesMut;
 use inband_traceroute_common::TraceEvent;
 use log::{info, warn};
-use tokio::{
-    task,
-};
+use tokio::task;
 
 use crate::tracer::Tracer;
 

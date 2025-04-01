@@ -1,18 +1,19 @@
-use anyhow::Context;
-use async_stream::{stream, try_stream};
 use core::panic;
-use etherparse::PacketBuilder;
-use futures::{stream::Stream, SinkExt};
-use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
-use log::{debug, warn};
-use rand::{rngs::OsRng, Rng};
-use socket2::Domain;
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     sync::{Arc, Weak},
     time::Duration,
 };
+
+use anyhow::Context;
+use async_stream::{stream, try_stream};
+use etherparse::PacketBuilder;
+use futures::{stream::Stream, SinkExt};
+use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
+use log::{debug, warn};
+use rand::{rngs::OsRng, Rng};
+use socket2::Domain;
 use tokio::{
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender},
