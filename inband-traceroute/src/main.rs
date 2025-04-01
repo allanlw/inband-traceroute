@@ -6,12 +6,13 @@ mod tracer;
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    pin::Pin,
     sync::Arc,
     time::Duration,
 };
 
 use anyhow::Context;
-use async_stream::stream;
+use async_stream::{stream, try_stream};
 use axum::{
     body::{Body, Bytes},
     extract::{ConnectInfo, State},
@@ -21,7 +22,9 @@ use axum::{
 };
 use clap::Parser;
 use ebpf::start_event_processor;
-use log::{error, info};
+use futures::Stream;
+use hyper::body::Frame;
+use log::{error, info, warn};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::{signal, sync::Mutex, time::sleep};
 use tokio_stream::StreamExt;
@@ -87,22 +90,31 @@ async fn index_handler<'a>(
 
     let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
 
+    let stream = try_stream! {
+        let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
+        warn!("Trace started");
+        while let Some(hop) = hop_stream.next().await {
+            warn!("Got hop: {:?}", hop);
+            let hop = format!("{:?}\n", hop);
+            yield hop.into();
+            yield Bytes::from_static(b"<br>\n");
+        }
+
+        warn!("Trace finished");
+
+        yield format!("{:?}", trace_handle).into();
+        sleep(Duration::from_secs(3)).await;
+        yield Bytes::from_static(b"This is a simple HTTP server.\n");
+        sleep(Duration::from_secs(3)).await;
+        yield Bytes::from_static(b"It supports HTTP/2 and HTTP/1.1.\n");
+    };
+
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=UTF-8")
-        .body(Body::from_stream(stream! {
-            let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
-            while let Some(hop) = hop_stream.next().await {
-                let hop = format!("{:?}\n", hop);
-                yield Ok::<Bytes, anyhow::Error>(hop.into());
-            }
-
-            yield Ok::<Bytes, anyhow::Error>( format!("{:?}", trace_handle).into());
-            sleep(Duration::from_secs(3)).await;
-            yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"This is a simple HTTP server.\n"));
-            sleep(Duration::from_secs(3)).await;
-            yield  Ok::<Bytes, anyhow::Error>(Bytes::from_static(b"It supports HTTP/2 and HTTP/1.1.\n"));
-        }))
+        .body(Body::from_stream(stream.map(
+            |b: anyhow::Result<Bytes>| -> anyhow::Result<Bytes> { b },
+        )))
         .unwrap()
 }
 

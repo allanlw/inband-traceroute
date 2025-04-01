@@ -21,7 +21,16 @@ const PORT: u16 = 443;
 const IPV4_LISTEN_ADDR: u32 = u32::from_be((10 << 24) + (146 << 16) + (0 << 8) + (2)); //  10.146.0.2
 const IPV6_LISTEN_ADDR: [u32; 4] = [1638438, 1644253248, 0, 0]; // 2600:1900:4050:162::
 
+const ICMP_TYPE_TTL_EXCEEDED: u8 = 11;
+
 const MAX_TRACES: u32 = 1024;
+
+#[repr(C)]
+struct TCPHeaderFirst8Bytes {
+    pub source: u16,
+    pub dest: u16,
+    pub seq: u32,
+}
 
 #[map]
 static EVENTS: PerfEventArray<TraceEvent> = PerfEventArray::new(0);
@@ -111,16 +120,70 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                         },
                         ack_seq: u32::from_be(tcp_hdr.ack_seq),
                         seq: u32::from_be(tcp_hdr.seq),
-                        ip_version: ip_version,
+                        ip_version,
+                        ttl: 0,
+                        addr: src_addr.addr,
                     };
-
-                    info!(&ctx, "Sending event: {}", event.trace_id);
 
                     EVENTS.output(&ctx, &event, 0)
                 }
             }
 
             return Ok(());
+        }
+        Some(IpProto::Icmp) => {
+            let icmp_hdr: &network_types::icmp::IcmpHdr = ptr_at(&ctx, layer4_offset.unwrap())?;
+            if icmp_hdr.type_ != ICMP_TYPE_TTL_EXCEEDED {
+                return Ok(());
+            }
+
+            let original_ip_hdr: &Ipv4Hdr = ptr_at(&ctx, layer4_offset.unwrap() + 8)?;
+
+            if original_ip_hdr.proto != IpProto::Tcp || original_ip_hdr.src_addr != IPV4_LISTEN_ADDR
+            {
+                info!(&ctx, "Not TCP packet or not from us");
+                return Ok(());
+            }
+
+            let original_tcp_hdr: &TCPHeaderFirst8Bytes =
+                ptr_at(&ctx, layer4_offset.unwrap() + 8 + Ipv4Hdr::LEN)?;
+
+            // packet didn't come from us
+            if u16::from_be(original_tcp_hdr.source) != PORT {
+                info!(&ctx, "Not TCP port match");
+                return Ok(());
+            }
+
+            let original_dest_addr = SocketAddr {
+                addr: IPAddr::new_v4(original_ip_hdr.dst_addr.to_le_bytes()),
+                port: u16::from_be(original_tcp_hdr.dest),
+            };
+
+            let trace_id = unsafe { TRACES.get(&original_dest_addr) };
+            match trace_id {
+                None => {
+                    info!(&ctx, "No trace found for original destination address");
+                    return Ok(());
+                }
+                Some(trace_id) => {
+                    // Found a trace, send event
+                    let event = TraceEvent {
+                        trace_id: *trace_id,
+                        event_type: inband_traceroute_common::TraceEventType::IcmpTimeExceeded,
+                        ack_seq: 0,
+                        seq: 0,
+                        ip_version: IPVersion::IPV4,
+                        ttl: u16::from_be(original_ip_hdr.id) as u8,
+                        addr: src_addr.addr,
+                    };
+
+                    info!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
+
+                    EVENTS.output(&ctx, &event, 0);
+
+                    return Ok(());
+                }
+            }
         }
         _ => {
             return Ok(());

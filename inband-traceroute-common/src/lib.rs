@@ -10,6 +10,8 @@ pub struct TraceEvent {
     pub seq: u32,
     pub event_type: TraceEventType,
     pub ip_version: IPVersion,
+    pub ttl: u8,
+    pub addr: IPAddr,
 }
 
 #[repr(u8)]
@@ -17,6 +19,7 @@ pub struct TraceEvent {
 pub enum TraceEventType {
     TcpAck,
     TcpRst,
+    IcmpTimeExceeded,
 }
 
 #[repr(u8)]
@@ -76,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_trace_event_size() {
-        assert_eq!(mem::size_of::<TraceEvent>(), 14);
+        assert_eq!(mem::size_of::<TraceEvent>(), 19);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::{fmt, net::IpAddr, time::Duration};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum HopType {
     Timeout,
     TCPRST,
@@ -21,7 +21,7 @@ impl fmt::Display for HopType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Hop {
     pub(crate) ttl: u8,
     pub(crate) hop_type: HopType,

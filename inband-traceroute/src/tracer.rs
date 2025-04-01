@@ -1,17 +1,17 @@
 use core::panic;
 use std::{
     collections::HashMap,
-    net::{IpAddr, SocketAddr},
+    net::{self, IpAddr, Ipv4Addr, SocketAddr},
     sync::{Arc, Weak},
     time::Duration,
 };
 
 use anyhow::Context;
 use async_stream::{stream, try_stream};
-use etherparse::PacketBuilder;
+use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder};
 use futures::{stream::Stream, SinkExt};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
-use log::{debug, warn};
+use log::{debug, info, warn};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
 use tokio::{
@@ -30,7 +30,7 @@ use crate::{
 
 type TraceId = u32;
 
-const STEP_TIMEOUT: Duration = Duration::from_secs(2);
+const STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub struct Tracer {
@@ -91,21 +91,40 @@ impl Tracer {
         seq: u32,
         seq_ack: u32,
     ) -> anyhow::Result<()> {
-        let builder = match (addr.ip(), self.listen_addr.ip()) {
-            (IpAddr::V4(remote), IpAddr::V4(local)) => {
-                PacketBuilder::ipv4(local.octets(), remote.octets(), ttl)
-            }
-            (IpAddr::V6(remote), IpAddr::V6(local)) => {
-                PacketBuilder::ipv6(local.octets(), remote.octets(), ttl)
-            }
+        let payload = self.domain.as_bytes();
+        let builder = PacketBuilder::ip(match (addr.ip(), self.listen_addr.ip()) {
+            (IpAddr::V4(remote), IpAddr::V4(local)) => etherparse::IpHeaders::Ipv4(
+                {
+                    let mut header = Ipv4Header::new(
+                        payload.len().try_into().unwrap(),
+                        ttl,
+                        ip_number::TCP,
+                        local.octets(),
+                        remote.octets(),
+                    )
+                    .unwrap();
+                    header.identification = ttl.try_into().unwrap();
+                    header
+                },
+                Default::default(),
+            ),
+            (IpAddr::V6(remote), IpAddr::V6(local)) => etherparse::IpHeaders::Ipv6(
+                Ipv6Header {
+                    hop_limit: ttl,
+                    source: local.octets(),
+                    destination: remote.octets(),
+                    payload_length: payload.len().try_into().unwrap(),
+                    next_header: ip_number::TCP,
+                    ..Default::default()
+                },
+                Default::default(),
+            ),
             _ => {
                 panic!("IP address family mismatch");
             }
-        }
+        })
         .tcp(self.listen_addr.port(), addr.port(), seq, 0xffff)
         .ack(seq_ack);
-
-        let payload = self.domain.as_bytes();
 
         let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
@@ -133,10 +152,10 @@ impl Tracer {
     }
 }
 
-fn std_ipaddr_to_ebpf(addr: std::net::IpAddr) -> IPAddr {
+fn std_ipaddr_to_ebpf(addr: IpAddr) -> IPAddr {
     match addr {
-        std::net::IpAddr::V4(ipv4) => IPAddr::new_v4(ipv4.octets()),
-        std::net::IpAddr::V6(ipv6) => IPAddr::new_v6(ipv6.octets()),
+        IpAddr::V4(ipv4) => IPAddr::new_v4(ipv4.octets()),
+        IpAddr::V6(ipv6) => IPAddr::new_v6(ipv6.octets()),
     }
 }
 
@@ -144,6 +163,18 @@ fn std_socket_addr_to_ebpf(addr: SocketAddr) -> inband_traceroute_common::Socket
     inband_traceroute_common::SocketAddr {
         addr: std_ipaddr_to_ebpf(addr.ip()),
         port: addr.port(),
+    }
+}
+
+fn ebpf_to_std_ipaddr(addr: IPAddr) -> IpAddr {
+    match addr.ip_version {
+        inband_traceroute_common::IPVersion::IPV4 => IpAddr::V4(Ipv4Addr::new(
+            addr.addr[0],
+            addr.addr[1],
+            addr.addr[2],
+            addr.addr[3],
+        )),
+        inband_traceroute_common::IPVersion::IPV6 => IpAddr::V6(net::Ipv6Addr::from(addr.addr)),
     }
 }
 
@@ -212,7 +243,7 @@ impl TraceHandle {
                         seq = event.seq;
                         break;
                     } else {
-                        warn!("Received unexpected event type: {:?}", event.event_type);
+                        panic!("Received unexpected event type: {:?}", event.event_type);
                     }
                 }
                 None => {
@@ -230,28 +261,45 @@ impl TraceHandle {
         let (mut ack_seq, mut seq) =
             timeout(Duration::from_secs(5), self.wait_for_initial_ack()).await??;
 
+        let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
+
         let stream = stream! {
-                yield Hop {
+                let origin = Hop {
                     ttl: 0,
                     hop_type: HopType::Origin,
                     addr: Some(self.tracer.listen_addr.ip()),
                     rtt: Duration::from_millis(0),
                 };
 
+                trace[0] = Some(origin);
+                yield origin;
+
                 let mut receiver = self.receiver.lock().await;
 
                 for ttl in 1..=self.tracer.max_hops {
+                    info!( "Trace with TTL {}", ttl);
+                    self.tracer.send_outbound_packet_burst(
+                        self.remote,
+                        ttl,
+                        ack_seq,
+                        seq,
+                    ).await.unwrap();
+
                     loop {
                         let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
 
+                        info!("Received event for TTL {}: {:?}", ttl, res);
+
                         if let Err(_) = res {
-                                yield Hop {
+                            let x = Hop {
                                     ttl,
                                     hop_type: HopType::Timeout,
                                     addr: None,
                                     rtt: Duration::from_millis(0),
-                                };
-                            continue;
+                            };
+                            trace[ttl as usize] = Some(x);
+                            yield x;
+                            break;
                         }
 
                         let event = res.unwrap();
@@ -259,23 +307,48 @@ impl TraceHandle {
                             panic!("Receiver channel closed before ack was received");
                         }
                         let event = event.unwrap();
-                        if event.event_type == TraceEventType::TcpAck {
-                            ack_seq = event.ack_seq;
-                            seq = event.seq;
-                            break;
-                        } else if event.event_type == TraceEventType::TcpRst {
-                            yield Hop {
-                                ttl,
-                                hop_type: HopType::TCPRST,
-                                addr: Some(self.remote.ip()),
-                                rtt: Duration::from_millis(0),
-                            };
-                            break;
-                        } else {
-                            panic!("Received unexpected event type: {:?}", event.event_type);
+                        match event.event_type {
+                            TraceEventType::IcmpTimeExceeded => {
+                                let x = Hop {
+                                    ttl: event.ttl,
+                                    hop_type: HopType::ICMPTimeExceeded,
+                                    addr: Some(ebpf_to_std_ipaddr(event.addr)),
+                                    rtt: Duration::from_millis(0),
+                                };
+                                if trace[x.ttl as usize].is_none() {
+                                    trace[x.ttl as usize] = Some(x);
+                                    yield x;
+                                    break;
+                                } else {
+                                    warn!("Received duplicate ICMP Time Exceeded event for TTL {}", ttl);
+                                }
+                            }
+                            TraceEventType::TcpAck => {
+                                ack_seq = event.ack_seq;
+                                seq = event.seq;
+                            }
+                            TraceEventType::TcpRst => {
+                                let x = Hop {
+                                    ttl,
+                                    hop_type: HopType::TCPRST,
+                                    addr: Some(self.remote.ip()),
+                                    rtt: Duration::from_millis(0),
+                                };
+                                if trace[ttl as usize].is_none() {
+                                    trace[ttl as usize] = Some(x);
+                                    yield x;
+                                    break;
+                                } else {
+                                    warn!("Received duplicate TCP RST event for TTL {}", ttl);
+                                }
+                            }
+                            _ => {
+                                panic!("Received unexpected event type: {:?}", event.event_type);
+                            }
                         }
                     }
                 }
+                warn!("Trace completed: {:?}", trace);
         };
 
         return Ok(stream);
@@ -284,18 +357,25 @@ impl TraceHandle {
 
 impl Drop for TraceHandle {
     fn drop(&mut self) {
-        let trace_map = self.tracer.trace_map.clone();
+        info!("Dropping trace handle for trace id {}", self.trace_id);
         let trace_id = self.trace_id;
         let remote = self.remote;
         let key = self.key;
+        let tracer = self.tracer.clone();
 
         tokio::spawn(async move {
-            let mut trace_map = trace_map.lock().await;
-            debug!("Unregistering trace id {} for remote {}", trace_id, remote);
+            {
+                let mut trace_map = tracer.trace_map.lock().await;
+                debug!("Unregistering trace id {} for remote {}", trace_id, remote);
 
-            trace_map.remove(&key).unwrap_or_else(|e| {
-                debug!("Failed to unregister trace id {}: {:#?}", trace_id, e);
-            });
+                trace_map.remove(&key).unwrap_or_else(|e| {
+                    debug!("Failed to unregister trace id {}: {:#?}", trace_id, e);
+                });
+            }
+            {
+                let mut traces = tracer.traces.write().await;
+                traces.remove(&trace_id);
+            }
         });
     }
 }
