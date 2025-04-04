@@ -1,19 +1,16 @@
 # Use the official Rust image as the base image
 FROM rust:bullseye
 
+RUN rustup toolchain install nightly --component rust-src && \
+    cargo install bpf-linker
+
 # Set the working directory
-WORKDIR /usr/src/app
+WORKDIR /app
 
 # Copy the Cargo.toml and Cargo.lock files
-COPY Cargo.toml Cargo.lock ./
-
-# Build the dependencies
-RUN cargo build --release
-
-# Copy the source code
 COPY . .
 
-# Build the application
+# Build the dependencies
 RUN cargo build --release
 
 # Set the entry point for the container
