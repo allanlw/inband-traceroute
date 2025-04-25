@@ -1,6 +1,11 @@
 #!/bin/bash
 
-INTERFACE="ens4"
+INTERFACE="$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n 1)"
+if [ -z "$INTERFACE" ]; then
+    echo "No network interface found."
+    exit 1
+fi
+echo "Using network interface: $INTERFACE"
 DOMAIN="inband-traceroute.net"
 
 IPV4="$(ip addr show $INTERFACE | grep -oP '(?<=inet\s)\d+(\.\d+){3}')"
