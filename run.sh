@@ -6,7 +6,12 @@ if [ -z "$INTERFACE" ]; then
     exit 1
 fi
 echo "Using network interface: $INTERFACE"
-DOMAIN="inband-traceroute.net"
+DOMAIN="$(dig +short CNAME dev-current.inband-traceroute.net)"
+if [ -z "$DOMAIN" ]; then
+    echo "Failed to resolve domain."
+    exit 1
+fi
+echo "Resolved domain: $DOMAIN"
 
 IPV4="$(ip addr show $INTERFACE | grep -oP '(?<=inet\s)\d+(\.\d+){3}')"
 IPV6="$(ip addr show $INTERFACE | grep -oP '(?<=inet6\s)[0-9a-fA-F:]+(?=/)' | head -n 1)"
@@ -19,6 +24,5 @@ RUST_LOG=info cargo run --release --config 'target."cfg(all())".runner="sudo -E"
     --domain "$DOMAIN" \
     --cache-dir ./.cert-cache \
     --ipv4 "$IPV4" \
-    --ipv6 "$IPV6" \
-    --prod
+    --ipv6 "$IPV6"
 
