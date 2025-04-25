@@ -258,8 +258,10 @@ impl TraceHandle {
     }
 
     pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
-        let (mut ack_seq, mut seq) =
-            timeout(Duration::from_secs(5), self.wait_for_initial_ack()).await??;
+        let (mut ack_seq, mut seq) = timeout(Duration::from_secs(5), self.wait_for_initial_ack())
+            .await
+            .context("Timed out waiting for initial ACK")?
+            .context("Failed to get initial ACK")?;
 
         let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
 

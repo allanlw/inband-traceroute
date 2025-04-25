@@ -88,6 +88,8 @@ async fn index_handler<'a>(
     }
     .expect("If we got a connection in this protocol, the program should have a tracer for it");
 
+    info!("Remote: {:?}", remote);
+
     let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
 
     let stream = try_stream! {
