@@ -1,13 +1,15 @@
+use core::panic;
 use std::sync::Arc;
 
 use anyhow::Context;
 use aya::{
-    maps::{AsyncPerfEventArray, HashMap, MapData},
+    maps::{Array, AsyncPerfEventArray, HashMap, MapData},
     programs::{Xdp, XdpFlags},
     util::online_cpus,
+    Ebpf,
 };
 use bytes::BytesMut;
-use inband_traceroute_common::TraceEvent;
+use inband_traceroute_common::{EbpfConfig, TraceEvent};
 use log::{info, warn};
 use tokio::task;
 
@@ -16,7 +18,10 @@ use crate::tracer::Tracer;
 pub(crate) type EventMap = AsyncPerfEventArray<MapData>;
 pub(crate) type TraceMap = HashMap<MapData, inband_traceroute_common::SocketAddr, u32>;
 
-pub(crate) fn setup_ebpf(iface: &str) -> anyhow::Result<(aya::Ebpf, TraceMap)> {
+pub(crate) fn setup_ebpf(
+    iface: &str,
+    config: &EbpfConfig,
+) -> anyhow::Result<(aya::Ebpf, TraceMap)> {
     let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/inband-traceroute"
@@ -29,6 +34,14 @@ pub(crate) fn setup_ebpf(iface: &str) -> anyhow::Result<(aya::Ebpf, TraceMap)> {
     program
         .attach(iface, XdpFlags::SKB_MODE)
         .context("failed to attach the XDP program - wrong mode?")?;
+
+    {
+        let mut config_map: Array<MapData, EbpfConfig> =
+            Array::try_from(ebpf.take_map("CONFIG").expect("failed to find CONFIG map"))?;
+        config_map
+            .set(0, config, 0)
+            .context("failed to set CONFIG map")?;
+    }
 
     let trace_map: TraceMap =
         HashMap::try_from(ebpf.take_map("TRACES").expect("failed to find TRACES map"))?;
@@ -70,6 +83,7 @@ pub(crate) fn start_event_processor(
                     let tracer = match data.ip_version {
                         inband_traceroute_common::IPVersion::IPV4 => &tracer_v4,
                         inband_traceroute_common::IPVersion::IPV6 => &tracer_v6,
+                        inband_traceroute_common::IPVersion::EMPTY => panic!("invalid IP version"),
                     };
 
                     let res = tracer

@@ -24,6 +24,7 @@ use clap::Parser;
 use ebpf::start_event_processor;
 use futures::Stream;
 use hyper::body::Frame;
+use inband_traceroute_common::EbpfConfig;
 use log::{error, info, warn};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::{signal, sync::Mutex, time::sleep};
@@ -195,8 +196,17 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Loading eBPF program...");
 
+    let ebpf_config = EbpfConfig::new(
+        opt.port,
+        opt.ipv4
+            .map(|ipv4| inband_traceroute_common::IPAddr::new_v4(ipv4.octets())),
+        opt.ipv6
+            .map(|ipv6| inband_traceroute_common::IPAddr::new_v6(ipv6.octets())),
+    );
+
     // Note: program will be detached when dropped
-    let (mut ebpf, trace_map) = ebpf::setup_ebpf(&opt.iface).context("EBPF setup failed")?;
+    let (mut ebpf, trace_map) =
+        ebpf::setup_ebpf(&opt.iface, &ebpf_config).context("EBPF setup failed")?;
 
     let trace_map = Arc::new(Mutex::new(trace_map));
 

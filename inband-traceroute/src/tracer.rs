@@ -175,6 +175,7 @@ fn ebpf_to_std_ipaddr(addr: IPAddr) -> IpAddr {
             addr.addr[3],
         )),
         inband_traceroute_common::IPVersion::IPV6 => IpAddr::V6(net::Ipv6Addr::from(addr.addr)),
+        inband_traceroute_common::IPVersion::EMPTY => panic!("Empty IP address"),
     }
 }
 

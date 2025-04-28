@@ -6,20 +6,16 @@ use core::mem;
 use aya_ebpf::{
     bindings::xdp_action,
     macros::{map, xdp},
-    maps::{HashMap, PerfEventArray},
+    maps::{Array, HashMap, PerfEventArray},
     programs::XdpContext,
 };
 use aya_log_ebpf::info;
-use inband_traceroute_common::{IPAddr, IPVersion, SocketAddr, TraceEvent};
+use inband_traceroute_common::{EbpfConfig, IPAddr, IPVersion, SocketAddr, TraceEvent};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr, Ipv6Hdr},
     tcp::TcpHdr,
 };
-
-const PORT: u16 = 443;
-const IPV4_LISTEN_ADDR: u32 = u32::from_be((10 << 24) + (146 << 16) + (0 << 8) + (2)); //  10.146.0.2
-const IPV6_LISTEN_ADDR: [u32; 4] = [1638438, 1644253248, 0, 0]; // 2600:1900:4050:162::
 
 const ICMP_TYPE_TTL_EXCEEDED: u8 = 11;
 
@@ -38,6 +34,9 @@ static EVENTS: PerfEventArray<TraceEvent> = PerfEventArray::new(0);
 #[map]
 static TRACES: HashMap<SocketAddr, u32> = HashMap::with_max_entries(MAX_TRACES, 0);
 
+#[map]
+static CONFIG: Array<EbpfConfig> = Array::with_max_entries(1, 0);
+
 #[xdp]
 pub fn inband_traceroute(ctx: XdpContext) -> u32 {
     match try_inband_traceroute(ctx) {
@@ -49,20 +48,22 @@ pub fn inband_traceroute(ctx: XdpContext) -> u32 {
 // Basically we ignore all packets that are not destined for our server (protocol, address, port)
 // Then, ignore all packets that are not associated with an active trace
 fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
+    let config: &EbpfConfig = CONFIG.get(0).unwrap();
+
     let ethhdr: &EthHdr = ptr_at(&ctx, 0)?;
     let ether_type = ethhdr.ether_type;
 
     let mut src_addr: SocketAddr = SocketAddr::default();
 
-    let mut ip_version: IPVersion = IPVersion::default();
-    let mut layer4_protocol: Option<IpProto> = None;
-    let mut layer4_offset: Option<usize> = None;
+    let ip_version: IPVersion;
+    let layer4_protocol: Option<IpProto>;
+    let layer4_offset: Option<usize>;
 
     match ether_type {
         EtherType::Ipv4 => {
             let ipv4hdr: &Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
             let dst_addr = ipv4hdr.dst_addr;
-            if dst_addr != IPV4_LISTEN_ADDR {
+            if Some(dst_addr) != config.get_ipv4() {
                 return Ok(());
             }
 
@@ -74,7 +75,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
         }
         EtherType::Ipv6 => {
             let ipv6hdr: &Ipv6Hdr = ptr_at(&ctx, EthHdr::LEN)?;
-            if unsafe { ipv6hdr.dst_addr.in6_u.u6_addr32 } != IPV6_LISTEN_ADDR {
+            if Some(unsafe { ipv6hdr.dst_addr.in6_u.u6_addr8 }) != config.get_ipv6() {
                 return Ok(());
             }
 
@@ -94,7 +95,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
             let tcp_hdr: &TcpHdr = ptr_at(&ctx, layer4_offset.unwrap())?;
             let dst_port = u16::from_be(tcp_hdr.dest);
 
-            if dst_port != PORT {
+            if dst_port != config.port {
                 return Ok(());
             }
 
@@ -139,7 +140,8 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
 
             let original_ip_hdr: &Ipv4Hdr = ptr_at(&ctx, layer4_offset.unwrap() + 8)?;
 
-            if original_ip_hdr.proto != IpProto::Tcp || original_ip_hdr.src_addr != IPV4_LISTEN_ADDR
+            if original_ip_hdr.proto != IpProto::Tcp
+                || Some(original_ip_hdr.src_addr) != config.get_ipv4()
             {
                 info!(&ctx, "Not TCP packet or not from us");
                 return Ok(());
@@ -149,7 +151,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 ptr_at(&ctx, layer4_offset.unwrap() + 8 + Ipv4Hdr::LEN)?;
 
             // packet didn't come from us
-            if u16::from_be(original_tcp_hdr.source) != PORT {
+            if u16::from_be(original_tcp_hdr.source) != config.port {
                 info!(&ctx, "Not TCP port match");
                 return Ok(());
             }
