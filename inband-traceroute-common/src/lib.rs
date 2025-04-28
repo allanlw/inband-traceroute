@@ -87,7 +87,7 @@ impl EbpfConfig {
     #[inline(always)]
     pub fn get_ipv4(&self) -> Option<u32> {
         if self.ipv4.ip_version == IPVersion::IPV4 {
-            self.ipv4.addr[0..4].try_into().map(u32::from_be_bytes).ok()
+            self.ipv4.addr[0..4].try_into().map(u32::from_le_bytes).ok()
         } else {
             None
         }

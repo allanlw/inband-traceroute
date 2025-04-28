@@ -63,6 +63,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
             let ipv4hdr: &Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
             let dst_addr = ipv4hdr.dst_addr;
             if Some(dst_addr) != config.get_ipv4() {
+                info!(&ctx, "IPv4 packet not destined for us", dst_addr);
                 return Ok(());
             }
 
