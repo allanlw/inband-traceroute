@@ -25,12 +25,14 @@ pub(crate) fn setup_ebpf(
     let mut ebpf = aya::Ebpf::load(aya::include_bytes_aligned!(concat!(
         env!("OUT_DIR"),
         "/inband-traceroute"
-    )))?;
+    )))
+    .context("Failed to load program")?;
 
     aya_log::EbpfLogger::init(&mut ebpf)?;
 
     let program: &mut Xdp = ebpf.program_mut("inband_traceroute").unwrap().try_into()?;
-    program.load()?;
+
+    program.load().context("Failed to load program")?;
     program
         .attach(iface, XdpFlags::SKB_MODE)
         .context("failed to attach the XDP program - wrong mode?")?;

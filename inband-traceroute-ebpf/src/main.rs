@@ -48,16 +48,15 @@ pub fn inband_traceroute(ctx: XdpContext) -> u32 {
 // Basically we ignore all packets that are not destined for our server (protocol, address, port)
 // Then, ignore all packets that are not associated with an active trace
 fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
-    let config: &EbpfConfig = CONFIG.get(0).unwrap();
-
+    let config: &EbpfConfig = CONFIG.get(0).ok_or(())?;
     let ethhdr: &EthHdr = ptr_at(&ctx, 0)?;
     let ether_type = ethhdr.ether_type;
 
     let mut src_addr: SocketAddr = SocketAddr::default();
 
     let ip_version: IPVersion;
-    let layer4_protocol: Option<IpProto>;
-    let layer4_offset: Option<usize>;
+    let layer4_protocol: IpProto;
+    let layer4_offset: usize;
 
     match ether_type {
         EtherType::Ipv4 => {
@@ -68,8 +67,8 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
             }
 
             ip_version = IPVersion::IPV4;
-            layer4_protocol = Some(ipv4hdr.proto);
-            layer4_offset = Some(EthHdr::LEN + Ipv4Hdr::LEN);
+            layer4_protocol = ipv4hdr.proto;
+            layer4_offset = EthHdr::LEN + Ipv4Hdr::LEN;
 
             src_addr.addr = IPAddr::new_v4(ipv4hdr.src_addr.to_le_bytes());
         }
@@ -80,8 +79,8 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
             }
 
             ip_version = IPVersion::IPV6;
-            layer4_protocol = Some(ipv6hdr.next_hdr);
-            layer4_offset = Some(EthHdr::LEN + Ipv6Hdr::LEN);
+            layer4_protocol = ipv6hdr.next_hdr;
+            layer4_offset = EthHdr::LEN + Ipv6Hdr::LEN;
 
             src_addr.addr = IPAddr::new_v6(unsafe { ipv6hdr.src_addr.in6_u.u6_addr8 });
         }
@@ -91,8 +90,8 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
     }
 
     match layer4_protocol {
-        Some(IpProto::Tcp) => {
-            let tcp_hdr: &TcpHdr = ptr_at(&ctx, layer4_offset.unwrap())?;
+        IpProto::Tcp => {
+            let tcp_hdr: &TcpHdr = ptr_at(&ctx, layer4_offset)?;
             let dst_port = u16::from_be(tcp_hdr.dest);
 
             if dst_port != config.port {
@@ -132,13 +131,13 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
 
             return Ok(());
         }
-        Some(IpProto::Icmp) => {
-            let icmp_hdr: &network_types::icmp::IcmpHdr = ptr_at(&ctx, layer4_offset.unwrap())?;
+        IpProto::Icmp => {
+            let icmp_hdr: &network_types::icmp::IcmpHdr = ptr_at(&ctx, layer4_offset)?;
             if icmp_hdr.type_ != ICMP_TYPE_TTL_EXCEEDED {
                 return Ok(());
             }
 
-            let original_ip_hdr: &Ipv4Hdr = ptr_at(&ctx, layer4_offset.unwrap() + 8)?;
+            let original_ip_hdr: &Ipv4Hdr = ptr_at(&ctx, layer4_offset + 8)?;
 
             if original_ip_hdr.proto != IpProto::Tcp
                 || Some(original_ip_hdr.src_addr) != config.get_ipv4()
@@ -148,7 +147,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
             }
 
             let original_tcp_hdr: &TCPHeaderFirst8Bytes =
-                ptr_at(&ctx, layer4_offset.unwrap() + 8 + Ipv4Hdr::LEN)?;
+                ptr_at(&ctx, layer4_offset + 8 + Ipv4Hdr::LEN)?;
 
             // packet didn't come from us
             if u16::from_be(original_tcp_hdr.source) != config.port {
