@@ -6,11 +6,15 @@ Prior Art:
 - [intrace](https://github.com/robertswiecki/intrace) by Robert Swiecki 
 - [Collaborative Research Proposal: an In-Band Traceroute Service](https://www.ietf.org/proceedings/94/slides/slides-94-hopsrg-4.pdf) by Dave Plonka (Akamai)
 
-
 Details:
 
 - Implemented in Rust with eBPF (XDP) for packet processing
-- Supports TLS 1.3 and HTTP2
+- Supports IPv4, TLS 1.3 (with ACME) and HTTP/2
+
+Planned features:
+- IPv6
+- HTTP/3
+- WebRTC
 
 ## Prerequisites
 
@@ -45,6 +49,6 @@ copied to a Linux server or VM and run there.
 
 Copyright (C) 2025 Allan Wirth
 
-The kernel portion is licensed under GPLv2, everything else (including the userspace portions) are licensed under AGPLv3. 
+The kernel portion is licensed under GPLv2, everything else (including the userspace portions) are licensed under AGPLv3.
 
 This program incorporates software from [aya-template](https://github.com/aya-rs/aya-template) (see commit bbf949a2) which is used under the terms of the MIT license copyright 2021 Alessandro Decina.

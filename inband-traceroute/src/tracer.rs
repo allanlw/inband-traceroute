@@ -68,17 +68,7 @@ impl Tracer {
         })
     }
 
-    pub async fn send_outbound_packet_burst(
-        &self,
-        addr: SocketAddr,
-        ttl: u8,
-        seq: u32,
-        ack: u32,
-    ) -> anyhow::Result<()> {
-        self.send_outbound_packet(addr, ttl, seq - 1, ack).await?;
-        Ok(())
-    }
-
+    // We send an outbound TCP Keep Alive Packet
     async fn send_outbound_packet(
         &self,
         addr: SocketAddr,
@@ -86,7 +76,7 @@ impl Tracer {
         seq: u32,
         seq_ack: u32,
     ) -> anyhow::Result<()> {
-        let payload = self.domain.as_bytes();
+        let payload: &[u8; 1] = &[0];
         let builder = PacketBuilder::ip(match (addr.ip(), self.listen_addr.ip()) {
             (IpAddr::V4(remote), IpAddr::V4(local)) => etherparse::IpHeaders::Ipv4(
                 {
@@ -129,7 +119,7 @@ impl Tracer {
 
         let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
-        builder.write(&mut result, &payload).unwrap();
+        builder.write(&mut result, payload).unwrap();
 
         self.socket.send_to(result.as_slice(), &addr.into()).await?;
 
@@ -280,16 +270,21 @@ impl TraceHandle {
 
                 let mut receiver = self.receiver.lock().await;
 
-                for ttl in 1..=self.tracer.max_hops {
+
+              'outer:   for ttl in 1..=self.tracer.max_hops {
                     info!( "Trace with TTL {}", ttl);
-                    self.tracer.send_outbound_packet_burst(
+
+                    let sent_seq = ack_seq - 1;
+                    // TODO: save timeing information for RTT
+                    self.tracer.send_outbound_packet(
                         self.remote,
                         ttl,
-                        ack_seq,
+                        sent_seq,
                         seq,
-                    ).await.unwrap();
+                    ).await.expect("Should never fail to send packets");
 
-                    loop {
+                   loop {
+                        // TODO: fix timing here to sleep for only remaining timeout if not first run
                         let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
 
                         info!("Received event for TTL {}: {:?}", ttl, res);
@@ -328,8 +323,27 @@ impl TraceHandle {
                                 }
                             }
                             TraceEventType::TcpAck => {
+                                info!("{:?} {} {}", event, sent_seq, ack_seq);
+                                if event.ack_seq - 1 == sent_seq {
+                                    info!("Ack for keapalive packet");
+                                    let x = Hop {
+                                        ttl,
+                                        hop_type: HopType::TCPAck,
+                                        addr: Some(self.remote.ip()),
+                                        rtt: Duration::from_millis(0),
+                                    };
+                                    if trace [ttl as usize].is_none() {
+                                        trace[ttl as usize] = Some(x);
+                                        yield x;
+                                        break 'outer;
+                                    } else {
+                                        warn!("Received duplicate TCP Ack event for TTL {}", ttl);
+                                    }
+                                } else {
                                 ack_seq = event.ack_seq;
                                 seq = event.seq;
+
+                                }
                             }
                             TraceEventType::TcpRst => {
                                 let x = Hop {
@@ -341,7 +355,7 @@ impl TraceHandle {
                                 if trace[ttl as usize].is_none() {
                                     trace[ttl as usize] = Some(x);
                                     yield x;
-                                    break;
+                                    break 'outer;
                                 } else {
                                     warn!("Received duplicate TCP RST event for TTL {}", ttl);
                                 }
