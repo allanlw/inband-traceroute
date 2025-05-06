@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Context;
 use async_stream::{stream, try_stream};
-use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder};
+use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::{stream::Stream, SinkExt};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
@@ -75,12 +75,7 @@ impl Tracer {
         seq: u32,
         ack: u32,
     ) -> anyhow::Result<()> {
-        for x in 0..=1 {
-            for y in 0..=1 {
-                self.send_outbound_packet(addr, ttl, seq - x, ack - y)
-                    .await?;
-            }
-        }
+        self.send_outbound_packet(addr, ttl, seq - 1, ack).await?;
         Ok(())
     }
 
@@ -124,9 +119,13 @@ impl Tracer {
                 panic!("IP address family mismatch");
             }
         })
-        .tcp(self.listen_addr.port(), addr.port(), seq, 0xffff)
-        .ack(seq_ack)
-        .psh();
+        .tcp_header({
+            let mut tcp_header = TcpHeader::new(self.listen_addr.port(), addr.port(), seq, 0xffff);
+            tcp_header.psh = true;
+            tcp_header.ack = true;
+            tcp_header.acknowledgment_number = seq_ack;
+            tcp_header
+        });
 
         let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
