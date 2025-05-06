@@ -1,4 +1,4 @@
-use std::{fmt, net::IpAddr, time::Duration};
+use std::{fmt, net::IpAddr};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum HopType {

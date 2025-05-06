@@ -6,13 +6,12 @@ mod tracer;
 use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
-    pin::Pin,
     sync::Arc,
     time::Duration,
 };
 
 use anyhow::Context;
-use async_stream::{stream, try_stream};
+use async_stream::try_stream;
 use axum::{
     body::{Body, Bytes},
     extract::{ConnectInfo, State},
@@ -22,8 +21,6 @@ use axum::{
 };
 use clap::Parser;
 use ebpf::start_event_processor;
-use futures::Stream;
-use hyper::body::Frame;
 use inband_traceroute_common::EbpfConfig;
 use log::{error, info, warn};
 use rustls_acme::{caches::DirCache, AcmeConfig};
@@ -79,7 +76,7 @@ struct AppState {
 }
 
 // TODO: Fix panics
-async fn index_handler<'a>(
+async fn index_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     state: State<Arc<AppState>>,
 ) -> Response {
@@ -89,7 +86,7 @@ async fn index_handler<'a>(
     }
     .expect("If we got a connection in this protocol, the program should have a tracer for it");
 
-    info!("Remote: {:?}", remote);
+    info!("Remote: {remote:?}");
 
     let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
 
@@ -97,15 +94,15 @@ async fn index_handler<'a>(
         let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
         warn!("Trace started");
         while let Some(hop) = hop_stream.next().await {
-            warn!("Got hop: {:?}", hop);
-            let hop = format!("{:?}\n", hop);
+            warn!("Got hop: {hop:?}");
+            let hop = format!("{hop:?}\n");
             yield hop.into();
             yield Bytes::from_static(b"<br>\n");
         }
 
         warn!("Trace finished");
 
-        yield format!("{:?}", trace_handle).into();
+        yield format!("{trace_handle:?}").into();
         sleep(Duration::from_secs(3)).await;
         yield Bytes::from_static(b"This is a simple HTTP server.\n");
         sleep(Duration::from_secs(3)).await;
@@ -123,7 +120,7 @@ async fn index_handler<'a>(
 
 fn setup_server(opt: &Opt, state: Arc<AppState>) {
     let mut acme_state = AcmeConfig::new(vec![opt.domain.clone()])
-        .contact(opt.emails.iter().map(|e| format!("mailto:{}", e)))
+        .contact(opt.emails.iter().map(|e| format!("mailto:{e}")))
         .cache_option(opt.cache_dir.clone().map(DirCache::new))
         .directory_lets_encrypt(opt.prod)
         .state();
@@ -150,8 +147,8 @@ fn setup_server(opt: &Opt, state: Arc<AppState>) {
     tokio::spawn(async move {
         loop {
             match acme_state.next().await.unwrap() {
-                Ok(ok) => info!("event: {:?}", ok),
-                Err(err) => error!("error: {:?}", err),
+                Ok(ok) => info!("event: {ok:?}"),
+                Err(err) => error!("error: {err:?}"),
             }
         }
     });
@@ -162,7 +159,7 @@ fn setup_server(opt: &Opt, state: Arc<AppState>) {
         .collect();
 
     for addr in addresses {
-        info!("Listening on {}", addr);
+        info!("Listening on {addr}");
         let service = app
             .clone()
             .into_make_service_with_connect_info::<SocketAddr>();
@@ -219,7 +216,6 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V4(ipv4), opt.port),
                 opt.max_hops,
                 trace_map.clone(),
-                opt.domain.clone(),
             )
         })
         .transpose()
@@ -233,7 +229,6 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V6(ipv6), opt.port),
                 opt.max_hops,
                 trace_map,
-                opt.domain.clone(),
             )
         })
         .transpose()

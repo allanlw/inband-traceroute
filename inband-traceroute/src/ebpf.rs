@@ -6,7 +6,6 @@ use aya::{
     maps::{Array, AsyncPerfEventArray, HashMap, MapData},
     programs::{Xdp, XdpFlags},
     util::online_cpus,
-    Ebpf,
 };
 use bytes::BytesMut;
 use inband_traceroute_common::{EbpfConfig, TraceEvent};
@@ -48,7 +47,7 @@ pub(crate) fn setup_ebpf(
     let trace_map: TraceMap =
         HashMap::try_from(ebpf.take_map("TRACES").expect("failed to find TRACES map"))?;
 
-    return Ok((ebpf, trace_map));
+    Ok((ebpf, trace_map))
 }
 
 pub(crate) fn start_event_processor(
@@ -80,7 +79,7 @@ pub(crate) fn start_event_processor(
                 for buf in buffers.iter_mut().take(events.read) {
                     let ptr = buf.as_ptr() as *const TraceEvent;
                     let data = unsafe { ptr.read_unaligned() };
-                    info!("event: {:?}", data);
+                    info!("event: {data:?}");
 
                     let tracer = match data.ip_version {
                         inband_traceroute_common::IPVersion::IPV4 => &tracer_v4,
@@ -95,7 +94,7 @@ pub(crate) fn start_event_processor(
                         .await;
 
                     if let Err(err) = res {
-                        warn!("Error processing event: {:?} {:?}", data, err);
+                        warn!("Error processing event: {data:?} {err:?}");
                     }
                 }
             }

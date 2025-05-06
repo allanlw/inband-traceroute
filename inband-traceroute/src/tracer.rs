@@ -40,7 +40,6 @@ pub struct Tracer {
     pub socket: raw::AsyncWriteOnlyIPRawSocket,
     pub trace_map: Arc<Mutex<TraceMap>>,
 
-    domain: String,
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
 
@@ -48,9 +47,9 @@ pub struct Tracer {
 fn bpf_ktime_get_ns() -> u64 {
     let ts = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
 
-    return (ts.tv_sec() * 1000000000 + ts.tv_nsec())
+    (ts.tv_sec() * 1000000000 + ts.tv_nsec())
         .try_into()
-        .unwrap();
+        .unwrap()
 }
 
 impl Tracer {
@@ -58,7 +57,6 @@ impl Tracer {
         listen_addr: SocketAddr,
         max_hops: u8,
         trace_map: Arc<Mutex<TraceMap>>,
-        hostname: String,
     ) -> anyhow::Result<Self> {
         let domain = match listen_addr {
             SocketAddr::V4(_) => Domain::IPV4,
@@ -73,7 +71,6 @@ impl Tracer {
             max_hops,
             socket,
             trace_map,
-            domain: hostname,
             traces: RwLock::new(HashMap::new()),
         })
     }
@@ -98,7 +95,7 @@ impl Tracer {
                         remote.octets(),
                     )
                     .unwrap();
-                    header.identification = ttl.try_into().unwrap();
+                    header.identification = ttl.into();
                     header.dont_fragment = true;
                     header
                 },
@@ -144,10 +141,10 @@ impl Tracer {
             if let Some(trace) = trace.upgrade() {
                 trace.sender.send(event)?;
             } else {
-                warn!("Trace {} is no longer valid", trace_id);
+                warn!("Trace {trace_id} is no longer valid");
             }
         } else {
-            warn!("Trace {} not found", trace_id);
+            warn!("Trace {trace_id} not found");
         }
         Ok(())
     }
@@ -211,7 +208,7 @@ impl TraceHandle {
             let mut traces = tracer.traces.write().await;
 
             // Just in case of collisions, we will keep generating new trace ids until we find a free one
-            while let Some(_) = traces.get(&trace_id) {
+            while traces.get(&trace_id).is_some() {
                 Arc::get_mut(&mut res).unwrap().trace_id = OsRng.gen();
             }
 
@@ -221,7 +218,7 @@ impl TraceHandle {
         {
             let mut trace_map = tracer.trace_map.lock().await;
 
-            debug!("Registering trace id {} for remote {}", trace_id, remote);
+            debug!("Registering trace id {trace_id} for remote {remote}");
 
             trace_map
                 .insert(key, trace_id, 0)
@@ -234,20 +231,18 @@ impl TraceHandle {
     async fn wait_for_initial_ack(&self) -> anyhow::Result<(u32, u32)> {
         let mut receiver = self.receiver.lock().await;
 
-        loop {
-            match receiver.recv().await {
-                Some(event) => {
-                    if event.event_type == TraceEventType::TcpAck {
-                        return Ok((event.ack_seq, event.seq));
-                    } else {
-                        panic!("Received unexpected event type: {:?}", event.event_type);
-                    }
+        match receiver.recv().await {
+            Some(event) => {
+                if event.event_type == TraceEventType::TcpAck {
+                    return Ok((event.ack_seq, event.seq));
+                } else {
+                    panic!("Received unexpected event type: {:?}", event.event_type);
                 }
-                None => {
-                    return Err(anyhow::anyhow!(
-                        "Receiver channel closed before ack was received"
-                    ));
-                }
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Receiver channel closed before ack was received"
+                ));
             }
         }
     }
@@ -275,7 +270,7 @@ impl TraceHandle {
 
 
               'outer:   for ttl in 1..=self.tracer.max_hops {
-                    info!( "Trace with TTL {}", ttl);
+                    info!( "Trace with TTL {ttl}");
 
                     let sent_seq = ack_seq - 1;
                     // TODO: save timeing information for RTT
@@ -292,9 +287,9 @@ impl TraceHandle {
                         // TODO: fix timing here to sleep for only remaining timeout if not first run
                         let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
 
-                        info!("Received event for TTL {}: {:?}", ttl, res);
+                        info!("Received event for TTL {ttl}: {res:?}");
 
-                        if let Err(_) = res {
+                        if res.is_err() {
                             let x = Hop {
                                     ttl,
                                     hop_type: HopType::Timeout,
@@ -324,11 +319,11 @@ impl TraceHandle {
                                     yield x;
                                     break;
                                 } else {
-                                    warn!("Received duplicate ICMP Time Exceeded event for TTL {}", ttl);
+                                    warn!("Received duplicate ICMP Time Exceeded event for TTL {ttl}");
                                 }
                             }
                             TraceEventType::TcpAck => {
-                                info!("{:?} {} {}", event, sent_seq, ack_seq);
+                                info!("{event:?} {sent_seq} {ack_seq}");
                                 if event.ack_seq - 1 == sent_seq {
                                     info!("Ack for keapalive packet");
                                     let x = Hop {
@@ -342,7 +337,7 @@ impl TraceHandle {
                                         yield x;
                                         break 'outer;
                                     } else {
-                                        warn!("Received duplicate TCP Ack event for TTL {}", ttl);
+                                        warn!("Received duplicate TCP Ack event for TTL {ttl}");
                                     }
                                 } else {
                                 ack_seq = event.ack_seq;
@@ -362,11 +357,8 @@ impl TraceHandle {
                                     yield x;
                                     break 'outer;
                                 } else {
-                                    warn!("Received duplicate TCP RST event for TTL {}", ttl);
+                                    warn!("Received duplicate TCP RST event for TTL {ttl}");
                                 }
-                            }
-                            _ => {
-                                panic!("Received unexpected event type: {:?}", event.event_type);
                             }
                         }
                     }
@@ -374,7 +366,7 @@ impl TraceHandle {
                 warn!("Trace completed: {:?}", trace);
         };
 
-        return Ok(stream);
+        Ok(stream)
     }
 }
 
@@ -389,10 +381,10 @@ impl Drop for TraceHandle {
         tokio::spawn(async move {
             {
                 let mut trace_map = tracer.trace_map.lock().await;
-                debug!("Unregistering trace id {} for remote {}", trace_id, remote);
+                debug!("Unregistering trace id {trace_id} for remote {remote}");
 
                 trace_map.remove(&key).unwrap_or_else(|e| {
-                    debug!("Failed to unregister trace id {}: {:#?}", trace_id, e);
+                    debug!("Failed to unregister trace id {trace_id}: {e:#?}");
                 });
             }
             {

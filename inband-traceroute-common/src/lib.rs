@@ -47,7 +47,7 @@ impl IPAddr {
         let mut addr = [0; 16];
         addr[0..4].copy_from_slice(&short_addr);
         Self {
-            addr: addr,
+            addr,
             ip_version: IPVersion::IPV4,
         }
     }
