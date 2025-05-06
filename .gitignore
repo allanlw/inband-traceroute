@@ -9,3 +9,6 @@ target/
 **/*.rs.bk
 .aider*
 .cert-cache
+
+.terraform/
+.envrc

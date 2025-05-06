@@ -1,0 +1,56 @@
+#cloud-config
+users:
+  - name: intr
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "SSH_PUBKEY" # to be replaced in terraform
+
+package_update: true
+package_upgrade: true
+packages:
+  - htop
+  - iotop
+  - iftop
+  - screen
+  - build-essential
+  - git
+  - jq
+  - bind9-dnsutils
+
+# note: write_files seems to happen before user
+write_files:
+- encoding: b64
+  content: "SSH_DEPLOY_KEY_B64" # to be replaced in terraform
+  owner: root:root
+  path: /deploy_key
+  permissions: '0644'
+
+runcmd:
+  - export USER=intr
+
+  # Set up SSH/GitHub
+  - curl -L https://api.github.com/meta | jq -r '.ssh_keys | .[]' | sed -e 's/^/github.com /' >> /home/$USER/.ssh/known_hosts
+  - echo 'Host github.com\n  IdentityFile /deploy_key\n' >> /home/$USER/.ssh/config
+  - chown -R $USER:$USER /home/$USER/.ssh/
+  - sudo -H -u $USER bash -c 'git config --global user.name "Allan Wirth" && git config --global user.email "allan@allanwirth.com"'
+
+  # Disable nftables (if present, like vultr)
+  - |
+    if [ -f /usr/sbin/nft ]; then
+      nft flush ruleset
+      systemctl stop nftables
+      apt purge -y nftables
+    fi
+
+  # Set up Rust
+  - export RUSTUP_HOME=/opt/rust
+  - export CARGO_HOME=/opt/rust
+  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable --profile default
+  - echo '\n\nsource /opt/rust/env' >> /home/$USER/.profile
+
+  # Set up application
+  - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/install-deps.sh'
+  - touch /home/$USER/setup-complete
