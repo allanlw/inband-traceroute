@@ -95,18 +95,12 @@ async fn index_handler(
         warn!("Trace started");
         while let Some(hop) = hop_stream.next().await {
             warn!("Got hop: {hop:?}");
-            let hop = format!("{hop:?}\n");
+            let hop = format!("{hop}\n");
             yield hop.into();
             yield Bytes::from_static(b"<br>\n");
         }
 
         warn!("Trace finished");
-
-        yield format!("{trace_handle:?}").into();
-        sleep(Duration::from_secs(3)).await;
-        yield Bytes::from_static(b"This is a simple HTTP server.\n");
-        sleep(Duration::from_secs(3)).await;
-        yield Bytes::from_static(b"It supports HTTP/2 and HTTP/1.1.\n");
     };
 
     Response::builder()
