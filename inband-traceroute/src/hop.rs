@@ -26,7 +26,7 @@ pub(crate) struct Hop {
     pub(crate) ttl: u8,
     pub(crate) hop_type: HopType,
     pub(crate) addr: Option<IpAddr>,
-    pub(crate) rtt: Duration,
+    pub(crate) rtt: Option<u64>,
 }
 
 impl fmt::Display for Hop {

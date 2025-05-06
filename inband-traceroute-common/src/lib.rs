@@ -5,6 +5,7 @@
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct TraceEvent {
+    pub arrival: u64,
     pub trace_id: u32,
     pub ack_seq: u32,
     pub seq: u32,

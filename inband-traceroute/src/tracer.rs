@@ -7,11 +7,12 @@ use std::{
 };
 
 use anyhow::Context;
-use async_stream::{stream, try_stream};
+use async_stream::stream;
 use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::{stream::Stream, SinkExt};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
+use nix::time::{clock_gettime, ClockId};
 use rand::{rngs::OsRng, Rng};
 use socket2::Domain;
 use tokio::{
@@ -41,6 +42,15 @@ pub struct Tracer {
 
     domain: String,
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
+}
+
+// Equivilent to the bpf_ktime_get_ns function from inside of BPF
+fn bpf_ktime_get_ns() -> u64 {
+    let ts = clock_gettime(ClockId::CLOCK_MONOTONIC).unwrap();
+
+    return (ts.tv_sec() * 1000000000 + ts.tv_nsec())
+        .try_into()
+        .unwrap();
 }
 
 impl Tracer {
@@ -222,18 +232,13 @@ impl TraceHandle {
     }
 
     async fn wait_for_initial_ack(&self) -> anyhow::Result<(u32, u32)> {
-        let mut ack_seq = 0;
-        let mut seq = 0;
-
         let mut receiver = self.receiver.lock().await;
 
         loop {
             match receiver.recv().await {
                 Some(event) => {
                     if event.event_type == TraceEventType::TcpAck {
-                        ack_seq = event.ack_seq;
-                        seq = event.seq;
-                        break;
+                        return Ok((event.ack_seq, event.seq));
                     } else {
                         panic!("Received unexpected event type: {:?}", event.event_type);
                     }
@@ -245,8 +250,6 @@ impl TraceHandle {
                 }
             }
         }
-
-        Ok((ack_seq, seq))
     }
 
     pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
@@ -262,7 +265,7 @@ impl TraceHandle {
                     ttl: 0,
                     hop_type: HopType::Origin,
                     addr: Some(self.tracer.listen_addr.ip()),
-                    rtt: Duration::from_millis(0),
+                    rtt: None,
                 };
 
                 trace[0] = Some(origin);
@@ -283,6 +286,8 @@ impl TraceHandle {
                         seq,
                     ).await.expect("Should never fail to send packets");
 
+                    let sent_time = bpf_ktime_get_ns();
+
                    loop {
                         // TODO: fix timing here to sleep for only remaining timeout if not first run
                         let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
@@ -294,7 +299,7 @@ impl TraceHandle {
                                     ttl,
                                     hop_type: HopType::Timeout,
                                     addr: None,
-                                    rtt: Duration::from_millis(0),
+                                    rtt: None,
                             };
                             trace[ttl as usize] = Some(x);
                             yield x;
@@ -312,7 +317,7 @@ impl TraceHandle {
                                     ttl: event.ttl,
                                     hop_type: HopType::ICMPTimeExceeded,
                                     addr: Some(ebpf_to_std_ipaddr(event.addr)),
-                                    rtt: Duration::from_millis(0),
+                                    rtt: Some(event.arrival - sent_time)
                                 };
                                 if trace[x.ttl as usize].is_none() {
                                     trace[x.ttl as usize] = Some(x);
@@ -330,7 +335,7 @@ impl TraceHandle {
                                         ttl,
                                         hop_type: HopType::TCPAck,
                                         addr: Some(self.remote.ip()),
-                                        rtt: Duration::from_millis(0),
+                                        rtt: Some(event.arrival - sent_time)
                                     };
                                     if trace [ttl as usize].is_none() {
                                         trace[ttl as usize] = Some(x);
@@ -350,7 +355,7 @@ impl TraceHandle {
                                     ttl,
                                     hop_type: HopType::TCPRST,
                                     addr: Some(self.remote.ip()),
-                                    rtt: Duration::from_millis(0),
+                                    rtt: Some(event.arrival - sent_time)
                                 };
                                 if trace[ttl as usize].is_none() {
                                     trace[ttl as usize] = Some(x);

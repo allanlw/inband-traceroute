@@ -5,6 +5,7 @@ use core::mem;
 
 use aya_ebpf::{
     bindings::xdp_action,
+    helpers::r#gen::bpf_ktime_get_ns,
     macros::{map, xdp},
     maps::{Array, HashMap, PerfEventArray},
     programs::XdpContext,
@@ -39,7 +40,8 @@ static CONFIG: Array<EbpfConfig> = Array::with_max_entries(1, 0);
 
 #[xdp]
 pub fn inband_traceroute(ctx: XdpContext) -> u32 {
-    match try_inband_traceroute(ctx) {
+    let arrival = unsafe { bpf_ktime_get_ns() };
+    match try_inband_traceroute(ctx, arrival) {
         Ok(_) => xdp_action::XDP_PASS,
         Err(_) => xdp_action::XDP_ABORTED,
     }
@@ -47,7 +49,7 @@ pub fn inband_traceroute(ctx: XdpContext) -> u32 {
 
 // Basically we ignore all packets that are not destined for our server (protocol, address, port)
 // Then, ignore all packets that are not associated with an active trace
-fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
+fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
     let config: &EbpfConfig = CONFIG.get(0).ok_or(())?;
     let ethhdr: &EthHdr = ptr_at(&ctx, 0)?;
     let ether_type = ethhdr.ether_type;
@@ -113,6 +115,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 Some(trace_id) => {
                     // Found a trace, send event
                     let event = TraceEvent {
+                        arrival,
                         trace_id: *trace_id,
                         event_type: if tcp_hdr.ack() != 0 {
                             inband_traceroute_common::TraceEventType::TcpAck
@@ -170,6 +173,7 @@ fn try_inband_traceroute(ctx: XdpContext) -> Result<(), ()> {
                 Some(trace_id) => {
                     // Found a trace, send event
                     let event = TraceEvent {
+                        arrival,
                         trace_id: *trace_id,
                         event_type: inband_traceroute_common::TraceEventType::IcmpTimeExceeded,
                         ack_seq: 0,
