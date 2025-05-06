@@ -3,6 +3,8 @@ name = "inband-traceroute"
 version = "0.1.0"
 edition = "2021"
 
+license.workspace = true
+
 [dependencies]
 inband-traceroute-common = { path = "../inband-traceroute-common", features = ["user"] }
 

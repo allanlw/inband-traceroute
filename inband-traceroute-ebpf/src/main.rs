@@ -212,3 +212,7 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<&T, ()> {
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
+
+#[link_section = "license"]
+#[no_mangle]
+static LICENSE: [u8; 4] = *b"GPL\0";
