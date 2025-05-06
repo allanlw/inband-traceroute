@@ -1,5 +1,17 @@
 # inband-traceroute
 
+This repository contains an HTTP server that implemented an inband traceroute functionality.
+
+Prior Art:
+- [intrace](https://github.com/robertswiecki/intrace) by Robert Swiecki 
+- [Collaborative Research Proposal: an In-Band Traceroute Service](https://www.ietf.org/proceedings/94/slides/slides-94-hopsrg-4.pdf) by Dave Plonka (Akamai)
+
+
+Details:
+
+- Implemented in Rust with eBPF (XDP) for packet processing
+- Supports TLS 1.3 and HTTP2
+
 ## Prerequisites
 
 1. stable rust toolchains: `rustup toolchain install stable`

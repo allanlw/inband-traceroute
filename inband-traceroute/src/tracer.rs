@@ -104,6 +104,7 @@ impl Tracer {
                     )
                     .unwrap();
                     header.identification = ttl.try_into().unwrap();
+                    header.dont_fragment = true;
                     header
                 },
                 Default::default(),
@@ -124,7 +125,8 @@ impl Tracer {
             }
         })
         .tcp(self.listen_addr.port(), addr.port(), seq, 0xffff)
-        .ack(seq_ack);
+        .ack(seq_ack)
+        .psh();
 
         let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
 

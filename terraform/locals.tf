@@ -1,5 +1,5 @@
 locals {
-  dev_mode = "none" # "vultr", "scaleway", "none"
+  dev_mode = "vultr" # "vultr", "scaleway", "none"
 
   # derived locals
   dev_ipv4       = local.dev_mode == "vultr" ? vultr_instance.dev[0].main_ip : local.dev_mode == "scaleway" ? scaleway_instance_ip.dev_ipv4[0].address : null
