@@ -21,12 +21,12 @@ impl AsyncWriteOnlyIPRawSocket {
         Ok(AsyncWriteOnlyIPRawSocket { inner: async_fd })
     }
 
-    pub async fn send_to(&self, buf: &[u8], addr: &SockAddr) -> std::io::Result<usize> {
+    pub async fn send_to(&self, buf: &[u8], addr: &SockAddr) -> anyhow::Result<usize> {
         loop {
             let mut guard = self.inner.writable().await?;
 
             match guard.try_io(|inner| inner.get_ref().send_to(buf, addr)) {
-                Ok(result) => return result,
+                Ok(result) => return result.context("Error from send_to"),
                 Err(_would_block) => continue,
             }
         }

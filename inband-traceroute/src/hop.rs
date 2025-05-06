@@ -36,7 +36,7 @@ impl fmt::Display for Hop {
             write!(f, " from {}", addr)?;
         };
         if let Some(rtt) = self.rtt {
-            write!(f, " (rtt {}ms", rtt / 1000000)?;
+            write!(f, " (rtt {}ms)", rtt / 1000000)?;
         }
         Ok(())
     }

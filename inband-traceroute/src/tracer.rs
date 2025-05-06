@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Context;
 use async_stream::stream;
-use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
+use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, SlicedPacket, TcpHeader};
 use futures::stream::Stream;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
@@ -88,7 +88,7 @@ impl Tracer {
             (IpAddr::V4(remote), IpAddr::V4(local)) => etherparse::IpHeaders::Ipv4(
                 {
                     let mut header = Ipv4Header::new(
-                        payload.len().try_into().unwrap(),
+                        0, // will be overwritteen
                         ttl,
                         ip_number::TCP,
                         local.octets(),
@@ -106,7 +106,7 @@ impl Tracer {
                     hop_limit: ttl,
                     source: local.octets(),
                     destination: remote.octets(),
-                    payload_length: payload.len().try_into().unwrap(),
+                    payload_length: 0, // will be overwritten
                     next_header: ip_number::TCP,
                     ..Default::default()
                 },
@@ -127,6 +127,10 @@ impl Tracer {
         let mut result = Vec::<u8>::with_capacity(builder.size(payload.len()));
 
         builder.write(&mut result, payload).unwrap();
+
+        info!("{:?}", SlicedPacket::from_ip(result.as_slice()));
+
+        info!("{addr}");
 
         self.socket.send_to(result.as_slice(), &addr.into()).await?;
 
