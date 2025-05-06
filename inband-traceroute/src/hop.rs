@@ -3,9 +3,9 @@ use std::{fmt, net::IpAddr};
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum HopType {
     Timeout,
-    TCPRST,
-    TCPAck,
-    ICMPTimeExceeded,
+    TcpRst,
+    TcpAck,
+    IcmpTimeExceeded,
     Origin,
 }
 
@@ -13,9 +13,9 @@ impl fmt::Display for HopType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             HopType::Timeout => write!(f, "[timeout]"),
-            HopType::TCPRST => write!(f, "TCP Reset"),
-            HopType::TCPAck => write!(f, "TCP ACK"),
-            HopType::ICMPTimeExceeded => write!(f, "ICMP Time Exceeded"),
+            HopType::TcpRst => write!(f, "TCP Reset"),
+            HopType::TcpAck => write!(f, "TCP ACK"),
+            HopType::IcmpTimeExceeded => write!(f, "ICMP Time Exceeded"),
             HopType::Origin => write!(f, "[this server]"),
         }
     }
@@ -31,10 +31,13 @@ pub(crate) struct Hop {
 
 impl fmt::Display for Hop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.ttl, self.hop_type)?;
         if let Some(addr) = self.addr {
-            write!(f, "{}: {} from {}", self.ttl, self.hop_type, addr)
-        } else {
-            write!(f, "{}: {}", self.ttl, self.hop_type)
+            write!(f, " from {}", addr)?;
+        };
+        if let Some(rtt) = self.rtt {
+            write!(f, " (rtt {}ms", rtt / 1000000)?;
         }
+        Ok(())
     }
 }

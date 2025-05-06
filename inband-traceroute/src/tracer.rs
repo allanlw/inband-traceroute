@@ -9,7 +9,7 @@ use std::{
 use anyhow::Context;
 use async_stream::stream;
 use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
-use futures::{stream::Stream, SinkExt};
+use futures::stream::Stream;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
 use nix::time::{clock_gettime, ClockId};
@@ -234,16 +234,14 @@ impl TraceHandle {
         match receiver.recv().await {
             Some(event) => {
                 if event.event_type == TraceEventType::TcpAck {
-                    return Ok((event.ack_seq, event.seq));
+                    Ok((event.ack_seq, event.seq))
                 } else {
                     panic!("Received unexpected event type: {:?}", event.event_type);
                 }
             }
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Receiver channel closed before ack was received"
-                ));
-            }
+            None => Err(anyhow::anyhow!(
+                "Receiver channel closed before ack was received"
+            )),
         }
     }
 
@@ -310,7 +308,7 @@ impl TraceHandle {
                             TraceEventType::IcmpTimeExceeded => {
                                 let x = Hop {
                                     ttl: event.ttl,
-                                    hop_type: HopType::ICMPTimeExceeded,
+                                    hop_type: HopType::IcmpTimeExceeded,
                                     addr: Some(ebpf_to_std_ipaddr(event.addr)),
                                     rtt: Some(event.arrival - sent_time)
                                 };
@@ -328,7 +326,7 @@ impl TraceHandle {
                                     info!("Ack for keapalive packet");
                                     let x = Hop {
                                         ttl,
-                                        hop_type: HopType::TCPAck,
+                                        hop_type: HopType::TcpAck,
                                         addr: Some(self.remote.ip()),
                                         rtt: Some(event.arrival - sent_time)
                                     };
@@ -348,7 +346,7 @@ impl TraceHandle {
                             TraceEventType::TcpRst => {
                                 let x = Hop {
                                     ttl,
-                                    hop_type: HopType::TCPRST,
+                                    hop_type: HopType::TcpRst,
                                     addr: Some(self.remote.ip()),
                                     rtt: Some(event.arrival - sent_time)
                                 };
