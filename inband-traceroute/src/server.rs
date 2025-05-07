@@ -1,10 +1,8 @@
 use std::{
     net::{IpAddr, SocketAddr},
-    path::PathBuf,
     sync::Arc,
 };
 
-use anyhow::Context;
 use async_stream::try_stream;
 use axum::{
     body::{Body, Bytes},
@@ -13,17 +11,13 @@ use axum::{
     routing::get,
     Router,
 };
-use clap::Parser;
-use inband_traceroute_common::EbpfConfig;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
-use tokio::{signal, sync::Mutex};
 use tokio_stream::StreamExt;
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
-use tracing_subscriber::EnvFilter;
 
-use crate::{ebpf::start_event_processor, tracer::TraceHandle};
+use crate::tracer::TraceHandle;
 
 #[derive(Debug)]
 pub(crate) struct AppState {

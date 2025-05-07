@@ -11,24 +11,12 @@ use std::{
 };
 
 use anyhow::Context;
-use async_stream::try_stream;
-use axum::{
-    body::{Body, Bytes},
-    extract::{ConnectInfo, State},
-    response::Response,
-    routing::get,
-    Router,
-};
 use clap::Parser;
 use ebpf::start_event_processor;
 use inband_traceroute_common::EbpfConfig;
-use log::{error, info};
-use rustls_acme::{caches::DirCache, AcmeConfig};
+use log::info;
 use tokio::{signal, sync::Mutex};
 use tokio_stream::StreamExt;
-use tower_http::trace::{self, TraceLayer};
-use tracer::TraceHandle;
-use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
