@@ -1,7 +1,7 @@
 use core::panic;
 use std::{
     collections::HashMap,
-    net::{self, IpAddr, Ipv4Addr, SocketAddr},
+    net::{self, IpAddr, Ipv4Addr, SocketAddr, SocketAddrV6},
     sync::{Arc, Weak},
     time::Duration,
 };
@@ -14,7 +14,7 @@ use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
 use nix::time::{clock_gettime, ClockId};
 use rand::{rngs::OsRng, Rng};
-use socket2::Domain;
+use socket2::{Domain, SockAddr};
 use tokio::{
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender},
@@ -84,39 +84,50 @@ impl Tracer {
         seq_ack: u32,
     ) -> anyhow::Result<()> {
         let payload: &[u8; 1] = &[0];
-        let builder = PacketBuilder::ip(match (addr.ip(), self.listen_addr.ip()) {
-            (IpAddr::V4(remote), IpAddr::V4(local)) => etherparse::IpHeaders::Ipv4(
-                {
-                    let mut header = Ipv4Header::new(
-                        0, // will be overwritteen
-                        ttl,
-                        ip_number::TCP,
-                        local.octets(),
-                        remote.octets(),
-                    )
-                    .unwrap();
-                    header.identification = ttl.into();
-                    header.dont_fragment = true;
-                    header
-                },
-                Default::default(),
-            ),
-            (IpAddr::V6(remote), IpAddr::V6(local)) => etherparse::IpHeaders::Ipv6(
-                Ipv6Header {
-                    hop_limit: ttl,
-                    source: local.octets(),
-                    destination: remote.octets(),
-                    payload_length: 0, // will be overwritten
-                    next_header: ip_number::TCP,
-                    ..Default::default()
-                },
-                Default::default(),
-            ),
+        let send_to_addr: SockAddr;
+
+        let ip_header = match (addr.ip(), self.listen_addr.ip()) {
+            (IpAddr::V4(remote), IpAddr::V4(local)) => {
+                send_to_addr = addr.into();
+                etherparse::IpHeaders::Ipv4(
+                    {
+                        let mut header = Ipv4Header::new(
+                            0, // will be overwritteen
+                            ttl,
+                            ip_number::TCP,
+                            local.octets(),
+                            remote.octets(),
+                        )
+                        .unwrap();
+                        header.identification = ttl.into();
+                        header.dont_fragment = true;
+                        header
+                    },
+                    Default::default(),
+                )
+            }
+            (IpAddr::V6(remote), IpAddr::V6(local)) => {
+                // Note port must be set to 0 to avoid EINVAL
+                // https://nick-black.com/dankwiki/index.php/Packet_sockets
+                send_to_addr = SocketAddrV6::new(remote, 0, 0, 0).into();
+                etherparse::IpHeaders::Ipv6(
+                    Ipv6Header {
+                        hop_limit: ttl,
+                        source: local.octets(),
+                        destination: remote.octets(),
+                        payload_length: 0, // will be overwritten
+                        next_header: ip_number::TCP,
+                        ..Default::default()
+                    },
+                    Default::default(),
+                )
+            }
             _ => {
                 panic!("IP address family mismatch");
             }
-        })
-        .tcp_header({
+        };
+
+        let builder = PacketBuilder::ip(ip_header).tcp_header({
             let mut tcp_header = TcpHeader::new(self.listen_addr.port(), addr.port(), seq, 0xffff);
             tcp_header.psh = true;
             tcp_header.ack = true;
@@ -128,11 +139,9 @@ impl Tracer {
 
         builder.write(&mut result, payload).unwrap();
 
-        info!("{:?}", SlicedPacket::from_ip(result.as_slice()));
-
-        info!("{addr}");
-
-        self.socket.send_to(result.as_slice(), &addr.into()).await?;
+        self.socket
+            .send_to(result.as_slice(), &send_to_addr)
+            .await?;
 
         Ok(())
     }

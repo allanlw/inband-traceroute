@@ -17,8 +17,9 @@ impl AsyncWriteOnlyIPRawSocket {
         socket
             .set_nonblocking(true)
             .context("Failed to set nonblocking")?;
-        let async_fd = AsyncFd::new(socket)?;
-        Ok(AsyncWriteOnlyIPRawSocket { inner: async_fd })
+
+        let inner = AsyncFd::new(socket)?;
+        Ok(AsyncWriteOnlyIPRawSocket { inner })
     }
 
     pub async fn send_to(&self, buf: &[u8], addr: &SockAddr) -> anyhow::Result<usize> {

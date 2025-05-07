@@ -19,7 +19,10 @@ IPV6="$(ip addr show $INTERFACE | grep -oP '(?<=inet6\s)[0-9a-fA-F:]+(?=/)' | he
 echo "IPv4: $IPV4"
 echo "IPv6: $IPV6"
 
-RUST_LOG=info cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
+export RUST_BACKTRACE=1
+export RUST_LOG=debug
+
+cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
     --iface "$INTERFACE" \
     --domain "$DOMAIN" \
     --cache-dir ./.cert-cache \
