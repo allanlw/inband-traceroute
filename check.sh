@@ -2,4 +2,4 @@
 
 cargo +nightly fmt --all
 
-cargo check --workspace
+cargo check
