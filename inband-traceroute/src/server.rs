@@ -87,8 +87,8 @@ pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
     tokio::spawn(async move {
         loop {
             match acme_state.next().await.unwrap() {
-                Ok(ok) => info!("event: {ok:?}"),
-                Err(err) => error!("error: {err:?}"),
+                Ok(ok) => info!("ACME event: {ok:?}"),
+                Err(err) => error!("ACME error: {err:?}"),
             }
         }
     });
