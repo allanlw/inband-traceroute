@@ -16,7 +16,6 @@ use ebpf::start_event_processor;
 use inband_traceroute_common::EbpfConfig;
 use log::info;
 use tokio::{signal, sync::Mutex};
-use tokio_stream::StreamExt;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
@@ -128,6 +127,8 @@ async fn main() -> anyhow::Result<()> {
     info!("Setting up server...");
 
     server::setup_server(&opt, state);
+
+    info("Access URL: https://{}/", opt.domain);
 
     info!("Server started. Press Ctrl+C to stop.");
 
