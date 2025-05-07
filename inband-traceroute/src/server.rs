@@ -85,11 +85,7 @@ async fn sse_handler(
     }
     .map(Ok);
 
-    Sse::new(stream).keep_alive(
-        axum::response::sse::KeepAlive::new()
-            .interval(Duration::from_secs(1))
-            .text("keep-alive-text"),
-    )
+    Sse::new(stream)
 }
 
 pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {

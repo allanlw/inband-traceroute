@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
 
     server::setup_server(&opt, state);
 
-    info("Access URL: https://{}/", opt.domain);
+    info!("Access server at https://{}:{}/", opt.domain, opt.port);
 
     info!("Server started. Press Ctrl+C to stop.");
 
