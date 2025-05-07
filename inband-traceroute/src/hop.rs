@@ -33,7 +33,7 @@ impl fmt::Display for Hop {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.ttl, self.hop_type)?;
         if let Some(addr) = self.addr {
-            write!(f, " from {}", addr)?;
+            write!(f, " from {addr}")?;
         };
         if let Some(rtt) = self.rtt {
             write!(f, " (rtt {}ms)", rtt / 1000000)?;

@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Context;
 use async_stream::stream;
-use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, SlicedPacket, TcpHeader};
+use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::stream::Stream;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};

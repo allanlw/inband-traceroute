@@ -7,7 +7,6 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::Context;
@@ -24,7 +23,7 @@ use ebpf::start_event_processor;
 use inband_traceroute_common::EbpfConfig;
 use log::{error, info, warn};
 use rustls_acme::{caches::DirCache, AcmeConfig};
-use tokio::{signal, sync::Mutex, time::sleep};
+use tokio::{signal, sync::Mutex};
 use tokio_stream::StreamExt;
 use tower_http::trace::{self, TraceLayer};
 use tracer::TraceHandle;
