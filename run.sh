@@ -20,7 +20,7 @@ echo "IPv4: $IPV4"
 echo "IPv6: $IPV6"
 
 export RUST_BACKTRACE=1
-export RUST_LOG=debug
+export RUST_LOG=info
 
 cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
     --iface "$INTERFACE" \

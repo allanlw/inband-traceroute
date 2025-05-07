@@ -10,7 +10,7 @@ use aya_ebpf::{
     maps::{Array, HashMap, PerfEventArray},
     programs::XdpContext,
 };
-use aya_log_ebpf::info;
+use aya_log_ebpf::debug;
 use inband_traceroute_common::{EbpfConfig, IPAddr, IPVersion, SocketAddr, TraceEvent};
 use network_types::{
     eth::{EthHdr, EtherType},
@@ -66,7 +66,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
             let ipv4hdr: &Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
             let dst_addr = ipv4hdr.dst_addr;
             if Some(dst_addr) != config.get_ipv4() {
-                info!(&ctx, "IPv4 packet not destined for us", dst_addr);
+                debug!(&ctx, "IPv4 packet not destined for us", dst_addr);
                 return Ok(());
             }
 
@@ -147,7 +147,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
             if original_ip_hdr.proto != IpProto::Tcp
                 || Some(original_ip_hdr.src_addr) != config.get_ipv4()
             {
-                info!(&ctx, "Not TCP packet or not from us");
+                debug!(&ctx, "Not TCP packet or not from us");
                 return Ok(());
             }
 
@@ -156,7 +156,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
 
             // packet didn't come from us
             if u16::from_be(original_tcp_hdr.source) != config.port {
-                info!(&ctx, "Not TCP port match");
+                debug!(&ctx, "Not TCP port match");
                 return Ok(());
             }
 
@@ -168,7 +168,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
             let trace_id = unsafe { TRACES.get(&original_dest_addr) };
             match trace_id {
                 None => {
-                    info!(&ctx, "No trace found for original destination address");
+                    debug!(&ctx, "No trace found for original destination address");
                     return Ok(());
                 }
                 Some(trace_id) => {
@@ -184,7 +184,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
                         addr: src_addr.addr,
                     };
 
-                    info!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
+                    debug!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
 
                     EVENTS.output(&ctx, &event, 0);
 
@@ -204,7 +204,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
             if original_ip_hdr.next_hdr != IpProto::Tcp
                 || Some(unsafe { original_ip_hdr.src_addr.in6_u.u6_addr8 }) != config.get_ipv6()
             {
-                info!(&ctx, "Not TCP packet or not from us");
+                debug!(&ctx, "Not TCP packet or not from us");
                 return Ok(());
             }
 
@@ -213,7 +213,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
 
             // packet didn't come from us
             if u16::from_be(original_tcp_hdr.source) != config.port {
-                info!(&ctx, "Not TCP port match");
+                debug!(&ctx, "Not TCP port match");
                 return Ok(());
             }
 
@@ -225,7 +225,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
             let trace_id = unsafe { TRACES.get(&original_dest_addr) };
             match trace_id {
                 None => {
-                    info!(&ctx, "No trace found for original destination address");
+                    debug!(&ctx, "No trace found for original destination address");
                     return Ok(());
                 }
                 Some(trace_id) => {
@@ -241,7 +241,7 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
                         addr: src_addr.addr,
                     };
 
-                    info!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
+                    debug!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
 
                     EVENTS.output(&ctx, &event, 0);
 

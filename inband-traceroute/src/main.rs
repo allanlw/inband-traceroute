@@ -91,15 +91,11 @@ async fn index_handler(
 
     let stream = try_stream! {
         let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
-        warn!("Trace started");
         while let Some(hop) = hop_stream.next().await {
-            warn!("Got hop: {hop:?}");
             let hop = format!("{hop}\n");
             yield hop.into();
             yield Bytes::from_static(b"<br>\n");
         }
-
-        warn!("Trace finished");
     };
 
     Response::builder()

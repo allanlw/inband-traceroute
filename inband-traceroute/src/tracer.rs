@@ -282,7 +282,7 @@ impl TraceHandle {
 
 
               'outer:   for ttl in 1..=self.tracer.max_hops {
-                    info!( "Trace with TTL {ttl}");
+                    debug!( "Trace with TTL {ttl}");
 
                     let sent_seq = ack_seq - 1;
                     // TODO: save timeing information for RTT
@@ -299,7 +299,7 @@ impl TraceHandle {
                         // TODO: fix timing here to sleep for only remaining timeout if not first run
                         let res = timeout(STEP_TIMEOUT, receiver.recv()).await;
 
-                        info!("Received event for TTL {ttl}: {res:?}");
+                        debug!("Received event for TTL {ttl}: {res:?}");
 
                         if res.is_err() {
                             let x = Hop {
@@ -335,9 +335,7 @@ impl TraceHandle {
                                 }
                             }
                             TraceEventType::TcpAck => {
-                                info!("{event:?} {sent_seq} {ack_seq}");
                                 if event.ack_seq - 1 == sent_seq {
-                                    info!("Ack for keapalive packet");
                                     let x = Hop {
                                         ttl,
                                         hop_type: HopType::TcpAck,
@@ -352,9 +350,8 @@ impl TraceHandle {
                                         warn!("Received duplicate TCP Ack event for TTL {ttl}");
                                     }
                                 } else {
-                                ack_seq = event.ack_seq;
-                                seq = event.seq;
-
+                                    ack_seq = event.ack_seq;
+                                    seq = event.seq;
                                 }
                             }
                             TraceEventType::TcpRst => {
@@ -375,7 +372,7 @@ impl TraceHandle {
                         }
                     }
                 }
-                warn!("Trace completed: {:?}", trace);
+                info!("Trace completed: {:?}", trace);
         };
 
         Ok(stream)
@@ -384,7 +381,7 @@ impl TraceHandle {
 
 impl Drop for TraceHandle {
     fn drop(&mut self) {
-        info!("Dropping trace handle for trace id {}", self.trace_id);
+        debug!("Dropping trace handle for trace id {}", self.trace_id);
         let trace_id = self.trace_id;
         let remote = self.remote;
         let key = self.key;

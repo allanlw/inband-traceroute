@@ -9,7 +9,7 @@ use aya::{
 };
 use bytes::BytesMut;
 use inband_traceroute_common::{EbpfConfig, TraceEvent};
-use log::{info, warn};
+use log::{debug, warn};
 use tokio::task;
 
 use crate::tracer::Tracer;
@@ -79,7 +79,7 @@ pub(crate) fn start_event_processor(
                 for buf in buffers.iter_mut().take(events.read) {
                     let ptr = buf.as_ptr() as *const TraceEvent;
                     let data = unsafe { ptr.read_unaligned() };
-                    info!("event: {data:?}");
+                    debug!("received event from ebpf: {data:?}");
 
                     let tracer = match data.ip_version {
                         inband_traceroute_common::IPVersion::IPV4 => &tracer_v4,
