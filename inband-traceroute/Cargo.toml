@@ -36,9 +36,9 @@ tracing-subscriber = { workspace = true, features=["env-filter"] }
 rand = { workspace = true }
 bytes = { workspace = true }
 etherparse = { workspace = true }
-
+serde_derive = { workspace = true }
+serde = { workspace = true }
 nix = { workspace = true }
-
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

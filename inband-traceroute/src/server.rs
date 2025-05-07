@@ -1,16 +1,19 @@
 use std::{
+    convert::Infallible,
     net::{IpAddr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
-use async_stream::try_stream;
+use async_stream::{stream, try_stream};
 use axum::{
     body::{Body, Bytes},
     extract::{ConnectInfo, State},
-    response::Response,
+    response::{sse::Event, Response, Sse},
     routing::get,
     Router,
 };
+use futures::Stream;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
@@ -25,16 +28,22 @@ pub(crate) struct AppState {
     pub(crate) tracer_v6: Option<Arc<crate::tracer::Tracer>>,
 }
 
+impl AppState {
+    fn get_tracer(&self, remote: SocketAddr) -> Arc<crate::tracer::Tracer> {
+        match remote {
+            SocketAddr::V4(_) => self.tracer_v4.clone(),
+            SocketAddr::V6(_) => self.tracer_v6.clone(),
+        }
+        .expect("If we got a connection in this protocol, the program should have a tracer for it")
+    }
+}
+
 // TODO: Fix panics
-pub(crate) async fn index_handler(
+async fn index_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     state: State<Arc<AppState>>,
 ) -> Response {
-    let tracer = match remote {
-        SocketAddr::V4(_) => state.tracer_v4.clone(),
-        SocketAddr::V6(_) => state.tracer_v6.clone(),
-    }
-    .expect("If we got a connection in this protocol, the program should have a tracer for it");
+    let tracer = state.get_tracer(remote);
 
     info!("Remote: {remote:?}");
 
@@ -58,6 +67,31 @@ pub(crate) async fn index_handler(
         .unwrap()
 }
 
+async fn sse_handler(
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    state: State<Arc<AppState>>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let tracer = state.get_tracer(remote);
+
+    info!("Remote: {remote:?}");
+
+    let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
+
+    let stream = stream! {
+        let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
+        while let Some(hop) = hop_stream.next().await {
+            yield Event::default().json_data(hop).unwrap();
+        }
+    }
+    .map(Ok);
+
+    Sse::new(stream).keep_alive(
+        axum::response::sse::KeepAlive::new()
+            .interval(Duration::from_secs(1))
+            .text("keep-alive-text"),
+    )
+}
+
 pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
     let mut acme_state = AcmeConfig::new(vec![opt.domain.clone()])
         .contact(opt.emails.iter().map(|e| format!("mailto:{e}")))
@@ -67,6 +101,7 @@ pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
 
     let app = Router::new()
         .route("/", get(index_handler))
+        .route("/sse", get(sse_handler))
         .with_state(state)
         .layer(
             TraceLayer::new_for_http()

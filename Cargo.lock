@@ -1263,6 +1263,8 @@ dependencies = [
  "nix",
  "rand",
  "rustls-acme",
+ "serde",
+ "serde_derive",
  "socket2 0.4.10",
  "tokio",
  "tokio-stream",

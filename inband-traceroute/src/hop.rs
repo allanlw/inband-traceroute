@@ -1,6 +1,7 @@
+use serde::Serialize;
 use std::{fmt, net::IpAddr};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) enum HopType {
     Timeout,
     TcpRst,
@@ -21,7 +22,7 @@ impl fmt::Display for HopType {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) struct Hop {
     pub(crate) ttl: u8,
     pub(crate) hop_type: HopType,
