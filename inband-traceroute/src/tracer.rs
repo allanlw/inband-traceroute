@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Context;
 use async_stream::stream;
-use etherparse::{ip_number, Ipv4Header, Ipv6Header, PacketBuilder, TcpHeader};
+use etherparse::{ip_number, Ipv4Header, Ipv6FlowLabel, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::stream::Stream;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
@@ -117,6 +117,7 @@ impl Tracer {
                         destination: remote.octets(),
                         payload_length: 0, // will be overwritten
                         next_header: ip_number::TCP,
+                        flow_label: Ipv6FlowLabel::try_new(ttl.into()).unwrap(),
                         ..Default::default()
                     },
                     Default::default(),

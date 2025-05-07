@@ -19,6 +19,7 @@ use network_types::{
 };
 
 const ICMP_TYPE_TTL_EXCEEDED: u8 = 11;
+const ICMPV6_TYPE_TTL_EXCEEDED: u8 = 3;
 
 const MAX_TRACES: u32 = 1024;
 
@@ -180,6 +181,63 @@ fn try_inband_traceroute(ctx: XdpContext, arrival: u64) -> Result<(), ()> {
                         seq: 0,
                         ip_version: IPVersion::IPV4,
                         ttl: u16::from_be(original_ip_hdr.id) as u8,
+                        addr: src_addr.addr,
+                    };
+
+                    info!(&ctx, "Sending ICMP TTL Exceeded event: {}", event.trace_id);
+
+                    EVENTS.output(&ctx, &event, 0);
+
+                    return Ok(());
+                }
+            }
+        }
+        IpProto::Ipv6Icmp => {
+            // Note: first 4 bytes of ICMPv6 header are the same as IPv4
+            let icmp_hdr: &network_types::icmp::IcmpHdr = ptr_at(&ctx, layer4_offset)?;
+            if icmp_hdr.type_ != ICMPV6_TYPE_TTL_EXCEEDED {
+                return Ok(());
+            }
+
+            let original_ip_hdr: &Ipv6Hdr = ptr_at(&ctx, layer4_offset + 8)?;
+
+            if original_ip_hdr.next_hdr != IpProto::Tcp
+                || Some(unsafe { original_ip_hdr.src_addr.in6_u.u6_addr8 }) != config.get_ipv6()
+            {
+                info!(&ctx, "Not TCP packet or not from us");
+                return Ok(());
+            }
+
+            let original_tcp_hdr: &TCPHeaderFirst8Bytes =
+                ptr_at(&ctx, layer4_offset + 8 + Ipv6Hdr::LEN)?;
+
+            // packet didn't come from us
+            if u16::from_be(original_tcp_hdr.source) != config.port {
+                info!(&ctx, "Not TCP port match");
+                return Ok(());
+            }
+
+            let original_dest_addr = SocketAddr {
+                addr: IPAddr::new_v6(unsafe { original_ip_hdr.dst_addr.in6_u.u6_addr8 }),
+                port: u16::from_be(original_tcp_hdr.dest),
+            };
+
+            let trace_id = unsafe { TRACES.get(&original_dest_addr) };
+            match trace_id {
+                None => {
+                    info!(&ctx, "No trace found for original destination address");
+                    return Ok(());
+                }
+                Some(trace_id) => {
+                    // Found a trace, send event
+                    let event = TraceEvent {
+                        arrival,
+                        trace_id: *trace_id,
+                        event_type: inband_traceroute_common::TraceEventType::IcmpTimeExceeded,
+                        ack_seq: 0,
+                        seq: 0,
+                        ip_version: IPVersion::IPV6,
+                        ttl: original_ip_hdr.flow_label[2],
                         addr: src_addr.addr,
                     };
 
