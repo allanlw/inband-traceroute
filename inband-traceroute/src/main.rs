@@ -21,7 +21,7 @@ use axum::{
 use clap::Parser;
 use ebpf::start_event_processor;
 use inband_traceroute_common::EbpfConfig;
-use log::{error, info, warn};
+use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio::{signal, sync::Mutex};
 use tokio_stream::StreamExt;
