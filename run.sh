@@ -6,7 +6,7 @@ if [ -z "$INTERFACE" ]; then
     exit 1
 fi
 echo "Using network interface: $INTERFACE"
-DOMAIN="$(hostname | tr '_' '.')"
+DOMAIN="$(hostname | tr '0' '.')"
 if [ -z "$DOMAIN" ]; then
     echo "Failed to resolve domain."
     exit 1
