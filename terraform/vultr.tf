@@ -5,29 +5,15 @@ resource "vultr_ssh_key" "inband_traceroute_tf" {
 
 resource "vultr_startup_script" "init" {
   name   = "inband-traceroute"
-  script = base64encode(terraform_data.cloud_init.output)
+  script = sensitive(base64encode(replace(replace(file("${path.module}/init/cloud-init.yml"), "SSH_PUBKEY", var.ssh_pubkey), "SSH_DEPLOY_KEY_B64", base64encode(tls_private_key.inband_traceroute_deploy_key.private_key_openssh))))
 }
 
-resource "vultr_instance" "dev" {
-  count = local.dev_mode == "vultr" ? 1 : 0
+module "trace_node" {
+  count = 0
 
-  label    = "inband-traceroute-dev"
-  hostname = "inband-traceroute-dev"
-
-  region = "nrt"
-  plan   = "vc2-4c-8gb"
-
-  os_id       = 2136 # Debian 12 x64
-  enable_ipv6 = true
-  user_scheme = "limited"
-  ssh_key_ids = [
-    vultr_ssh_key.inband_traceroute_tf.id
-  ]
-  script_id = vultr_startup_script.init.id
-
-  lifecycle {
-    replace_triggered_by = [
-      vultr_startup_script.init.script,
-    ]
-  }
+  source            = "./modules/trace_node"
+  ssh_key_id        = vultr_ssh_key.inband_traceroute_tf.id
+  startup_script_id = vultr_startup_script.init.id
+  dns_zone_name     = google_dns_managed_zone.inband_traceroute.name
+  dns_name          = "dev.inband-traceroute.net."
 }

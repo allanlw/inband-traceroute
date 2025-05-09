@@ -8,13 +8,5 @@ terraform {
       source  = "vultr/vultr"
       version = "2.26.0"
     }
-    github = {
-      source  = "integrations/github"
-      version = "6.6.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "4.1.0"
-    }
   }
 }
