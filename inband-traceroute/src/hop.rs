@@ -1,8 +1,5 @@
-use maxminddb::{
-    geoip2::{Asn, Country},
-    Reader,
-};
-use serde::Serialize;
+use maxminddb::Reader;
+use serde::{Deserialize, Serialize};
 use std::{fmt, net::IpAddr};
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -12,6 +9,18 @@ pub(crate) enum HopType {
     TcpAck,
     IcmpTimeExceeded,
     Origin,
+}
+
+// See https://community.ipinfo.io/t/using-ipinfos-mmdb-database-with-rust/5587
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct IpinfoCountryASN<'a> {
+    pub country: Option<&'a str>,
+    pub country_name: Option<&'a str>,
+    pub continent: Option<&'a str>,
+    pub continent_name: Option<&'a str>,
+    pub asn: Option<&'a str>,
+    pub as_name: Option<&'a str>,
+    pub as_domain: Option<&'a str>,
 }
 
 impl fmt::Display for HopType {
@@ -27,18 +36,12 @@ impl fmt::Display for HopType {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct EnrichedInfo {
-    pub(crate) asn: Option<Asn<'static>>,
-    pub(crate) country: Option<Country<'static>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub(crate) struct Hop {
     pub(crate) ttl: u8,
     pub(crate) hop_type: HopType,
     pub(crate) addr: Option<IpAddr>,
     pub(crate) rtt: Option<u64>,
-    pub(crate) enriched_info: Option<EnrichedInfo>,
+    pub(crate) enriched_info: Option<IpinfoCountryASN<'static>>,
 }
 
 impl Hop {
@@ -54,10 +57,7 @@ impl Hop {
             hop_type,
             addr,
             rtt,
-            enriched_info: addr.map(|addr| EnrichedInfo {
-                asn: ipdb.lookup::<Asn>(addr).unwrap(),
-                country: ipdb.lookup::<Country>(addr).unwrap(),
-            }),
+            enriched_info: addr.and_then(|addr| ipdb.lookup::<IpinfoCountryASN>(addr).unwrap()),
         }
     }
 }
