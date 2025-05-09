@@ -4,7 +4,16 @@ resource "vultr_ssh_key" "inband_traceroute_tf" {
 }
 
 resource "terraform_data" "init_script" {
-  input = sensitive(base64encode(replace(replace(file("${path.module}/init/cloud-init.yml"), "SSH_PUBKEY", var.ssh_pubkey), "SSH_DEPLOY_KEY_B64", base64encode(tls_private_key.inband_traceroute_deploy_key.private_key_openssh))))
+  input = base64encode(
+    templatefile(
+      "${path.module}/init/cloud-init.yml.tftpl",
+      {
+        ssh_pubkey         = var.ssh_pubkey
+        ssh_deploy_key_b64 = base64encode(tls_private_key.inband_traceroute_deploy_key.private_key_openssh)
+        ipinfoio_token_b64 = base64encode(var.ipinfoio_token)
+      }
+    )
+  )
 }
 
 resource "vultr_startup_script" "init" {

@@ -6,7 +6,7 @@ users:
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
     lock_passwd: true
     ssh_authorized_keys:
-      - "SSH_PUBKEY" # to be replaced in terraform
+      - "${ssh_pubkey}" # to be replaced in terraform
 
 package_update: true
 package_upgrade: true
@@ -23,7 +23,12 @@ packages:
 # note: write_files seems to happen before user
 write_files:
 - encoding: b64
-  content: "SSH_DEPLOY_KEY_B64" # to be replaced in terraform
+  content: "${ipinfoio_token_b64}" # to be replaced in terraform
+  owner: root:root
+  path: /ipinfoio_token
+  permissions: '0644'
+- encoding: b64
+  content: "${ssh_deploy_key_b64}" # to be replaced in terraform
   owner: root:root
   path: /deploy_key
   permissions: '0644'
@@ -49,6 +54,11 @@ write_files:
 runcmd:
   - export USER=intr
 
+  # Create /ipinfo/ directory and set permissions for intr user
+  - mkdir -p /opt/ipinfoio
+  - chown intr:intr /opt/ipinfoio
+  - chmod 755 /opt/ipinfoio
+
   # Set up SSH/GitHub
   - curl -L https://api.github.com/meta | jq -r '.ssh_keys | .[]' | sed -e 's/^/github.com /' >> /home/$USER/.ssh/known_hosts
   - echo 'Host github.com\n  IdentityFile /deploy_key\n' >> /home/$USER/.ssh/config
@@ -70,8 +80,12 @@ runcmd:
   - echo '\n\nsource /opt/rust/env' >> /home/$USER/.profile
 
   # Set up application
-  - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/install-deps.sh'
+  - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/install-deps.sh && ~/inband-traceroute/update-ipdb.sh'
   - touch /home/$USER/setup-complete
+  
+  # Add cron job to run update-ipdb.sh every 6 hours as intr user
+  - sudo -H -u $USER /home/intr/inband-traceroute/update-ipdb.sh
+  - sudo -H -u $USER bash -c 'echo "0 */6 * * * /home/intr/inband-traceroute/update-ipdb.sh" | crontab -'
   
   # Enable and start inband-traceroute systemd service
   - systemctl daemon-reload
