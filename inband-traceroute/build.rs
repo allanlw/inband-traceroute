@@ -12,6 +12,6 @@ fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow!("inband-traceroute-ebpf package not found"))?;
     aya_build::build_ebpf(
         [ebpf_package],
-        aya_build::Toolchain::Custom("nightly-2025-05-04-x86_64-unknown-linux-gnu"), // TODO: revert to nightly after https://github.com/rust-lang/compiler-builtins/issues/908 is fixed
+        aya_build::Toolchain::Nightly, // TODO: revert to nightly after https://github.com/rust-lang/compiler-builtins/issues/908 is fixed
     )
 }
