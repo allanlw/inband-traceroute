@@ -41,7 +41,7 @@ write_files:
     Type=simple
     User=intr
     WorkingDirectory=/home/intr/inband-traceroute
-    ExecStart=/home/intr/inband-traceroute/run.sh
+    ExecStart=/home/intr/inband-traceroute/script/run.sh
     Restart=always
     RestartSec=5
 
@@ -80,12 +80,12 @@ runcmd:
   - echo '\n\nsource /opt/rust/env' >> /home/$USER/.profile
 
   # Set up application
-  - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/install-deps.sh && ~/inband-traceroute/update-ipdb.sh'
+  - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/script/install-deps.sh && ~/inband-traceroute/script/update-ipdb.sh'
   - touch /home/$USER/setup-complete
   
   # Add cron job to run update-ipdb.sh every 6 hours as intr user
-  - sudo -H -u $USER /home/intr/inband-traceroute/update-ipdb.sh
-  - sudo -H -u $USER bash -c 'echo "0 */6 * * * /home/intr/inband-traceroute/update-ipdb.sh" | crontab -'
+  - sudo -H -u $USER /home/intr/inband-traceroute/script/update-ipdb.sh
+  - sudo -H -u $USER bash -c 'echo "0 */6 * * * /home/intr/inband-traceroute/script/update-ipdb.sh" | crontab -'
   
   # Enable and start inband-traceroute systemd service
   - systemctl daemon-reload
