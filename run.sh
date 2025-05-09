@@ -1,5 +1,9 @@
 #!/bin/bash
 
+if ! command -v cargo >/dev/null 2>&1; then
+  source /opt/rust/env
+fi
+
 INTERFACE="$(ip -o link show | awk -F': ' '{print $2}' | grep -v lo | head -n 1)"
 if [ -z "$INTERFACE" ]; then
     echo "No network interface found."
