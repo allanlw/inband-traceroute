@@ -13,5 +13,5 @@ if [ -f "$OUTPUT_FILE" ]; then
     fi
 fi
 
-curl https://ipinfo.io/data/ipinfo_lite.mmdb?token="${TOKEN}" \
+curl -L https://ipinfo.io/data/ipinfo_lite.mmdb?token="${TOKEN}" \
   -o "$OUTPUT_FILE"
