@@ -1,6 +1,6 @@
 resource "vultr_instance" "instance" {
-  label    = var.dns_name
-  hostname = var.dns_name
+  hostname = trim(replace(var.dns_name, ".", "-"), "-")
+  label    = trim(replace(var.dns_name, ".", "-"), "-")
 
   region = var.region
   plan   = "vc2-4c-8gb"
