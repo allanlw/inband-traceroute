@@ -6,7 +6,7 @@ if [ -z "$INTERFACE" ]; then
     exit 1
 fi
 echo "Using network interface: $INTERFACE"
-DOMAIN="$(dig +short CNAME dev-current.inband-traceroute.net | sed 's/\.$//')"
+DOMAIN="$(curl -s http://169.254.169.254/v1.json | jq -r 'map(select(startswith("dns:")) | sub("^dns:";"")) | first')"
 if [ -z "$DOMAIN" ]; then
     echo "Failed to resolve domain."
     exit 1

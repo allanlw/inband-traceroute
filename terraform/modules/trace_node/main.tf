@@ -2,7 +2,7 @@ resource "vultr_instance" "instance" {
   label    = "inband-traceroute-dev"
   hostname = "inband-traceroute-dev"
 
-  region = "nrt"
+  region = var.region
   plan   = "vc2-4c-8gb"
 
   os_id       = 2136 # Debian 12 x64
@@ -10,6 +10,10 @@ resource "vultr_instance" "instance" {
   user_scheme = "limited"
   ssh_key_ids = [var.ssh_key_id]
   script_id   = var.startup_script_id
+
+  tags = [
+    "dns:${trim(var.dns_name, ".")}",
+  ]
 }
 
 resource "google_dns_record_set" "dev_inband_traceroute_a" {

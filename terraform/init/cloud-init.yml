@@ -27,6 +27,24 @@ write_files:
   owner: root:root
   path: /deploy_key
   permissions: '0644'
+- content: |
+    [Unit]
+    Description=Inband Traceroute Service
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=intr
+    WorkingDirectory=/home/intr/inband-traceroute
+    ExecStart=/home/intr/inband-traceroute/run.sh
+    Restart=always
+    RestartSec=5
+
+    [Install]
+    WantedBy=multi-user.target
+  owner: root:root
+  path: /etc/systemd/system/inband-traceroute.service
+  permissions: '0644'
 
 runcmd:
   - export USER=intr
@@ -54,3 +72,8 @@ runcmd:
   # Set up application
   - sudo -H -u $USER bash -c 'source /opt/rust/env && git clone git@github.com:allanlw/inband-traceroute.git ~/inband-traceroute && ~/inband-traceroute/install-deps.sh'
   - touch /home/$USER/setup-complete
+  
+  # Enable and start inband-traceroute systemd service
+  - systemctl daemon-reload
+  - systemctl enable inband-traceroute.service
+  - systemctl start inband-traceroute.service
