@@ -1,3 +1,7 @@
+use maxminddb::{
+    geoip2::{Asn, Country},
+    Reader,
+};
 use serde::Serialize;
 use std::{fmt, net::IpAddr};
 
@@ -22,12 +26,40 @@ impl fmt::Display for HopType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct EnrichedInfo {
+    pub(crate) asn: Option<Asn<'static>>,
+    pub(crate) country: Option<Country<'static>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct Hop {
     pub(crate) ttl: u8,
     pub(crate) hop_type: HopType,
     pub(crate) addr: Option<IpAddr>,
     pub(crate) rtt: Option<u64>,
+    pub(crate) enriched_info: Option<EnrichedInfo>,
+}
+
+impl Hop {
+    pub(crate) fn new(
+        ttl: u8,
+        hop_type: HopType,
+        addr: Option<IpAddr>,
+        rtt: Option<u64>,
+        ipdb: &'static Reader<Vec<u8>>,
+    ) -> Self {
+        Self {
+            ttl,
+            hop_type,
+            addr,
+            rtt,
+            enriched_info: addr.map(|addr| EnrichedInfo {
+                asn: ipdb.lookup::<Asn>(addr).unwrap(),
+                country: ipdb.lookup::<Country>(addr).unwrap(),
+            }),
+        }
+    }
 }
 
 impl fmt::Display for Hop {

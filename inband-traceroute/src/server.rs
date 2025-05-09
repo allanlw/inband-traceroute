@@ -2,7 +2,6 @@ use std::{
     convert::Infallible,
     net::{IpAddr, SocketAddr},
     sync::Arc,
-    time::Duration,
 };
 
 use async_stream::{stream, try_stream};

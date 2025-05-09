@@ -39,6 +39,8 @@ etherparse = { workspace = true }
 serde_derive = { workspace = true }
 serde = { workspace = true }
 nix = { workspace = true }
+maxminddb = { workspace = true }
+
 [build-dependencies]
 anyhow = { workspace = true }
 aya-build = { workspace = true }

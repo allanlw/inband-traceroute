@@ -9,9 +9,10 @@ use std::{
 use anyhow::Context;
 use async_stream::stream;
 use etherparse::{ip_number, Ipv4Header, Ipv6FlowLabel, Ipv6Header, PacketBuilder, TcpHeader};
-use futures::stream::Stream;
+use futures::stream::{Stream, StreamExt};
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
+use maxminddb::Reader;
 use nix::time::{clock_gettime, ClockId};
 use rand::{rngs::OsRng, Rng};
 use socket2::{Domain, SockAddr};
@@ -39,6 +40,7 @@ pub struct Tracer {
     pub max_hops: u8,
     pub socket: raw::AsyncWriteOnlyIPRawSocket,
     pub trace_map: Arc<Mutex<TraceMap>>,
+    pub ipdb: &'static Reader<Vec<u8>>,
 
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
@@ -57,6 +59,7 @@ impl Tracer {
         listen_addr: SocketAddr,
         max_hops: u8,
         trace_map: Arc<Mutex<TraceMap>>,
+        ipdb: &'static Reader<Vec<u8>>,
     ) -> anyhow::Result<Self> {
         let domain = match listen_addr {
             SocketAddr::V4(_) => Domain::IPV4,
@@ -71,6 +74,7 @@ impl Tracer {
             max_hops,
             socket,
             trace_map,
+            ipdb,
             traces: RwLock::new(HashMap::new()),
         })
     }
@@ -259,23 +263,14 @@ impl TraceHandle {
         }
     }
 
-    pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
+    async fn hop_stream_internal<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
         let (mut ack_seq, mut seq) = timeout(Duration::from_secs(5), self.wait_for_initial_ack())
             .await
             .context("Timed out waiting for initial ACK")?
             .context("Failed to get initial ACK")?;
 
-        let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
-
         let stream = stream! {
-                let origin = Hop {
-                    ttl: 0,
-                    hop_type: HopType::Origin,
-                    addr: Some(self.tracer.listen_addr.ip()),
-                    rtt: None,
-                };
-
-                trace[0] = Some(origin);
+                let origin = Hop::new(0, HopType::Origin, Some(self.tracer.listen_addr.ip()), None, self.tracer.ipdb);
                 yield origin;
 
                 let mut receiver = self.receiver.lock().await;
@@ -302,14 +297,13 @@ impl TraceHandle {
                         debug!("Received event for TTL {ttl}: {res:?}");
 
                         if res.is_err() {
-                            let x = Hop {
-                                    ttl,
-                                    hop_type: HopType::Timeout,
-                                    addr: None,
-                                    rtt: None,
-                            };
-                            trace[ttl as usize] = Some(x);
-                            yield x;
+                            yield Hop::new(
+                                ttl,
+                                HopType::Timeout,
+                                None,
+                                None,
+                                self.tracer.ipdb
+                            );
                             break;
                         }
 
@@ -320,59 +314,62 @@ impl TraceHandle {
                         let event = event.unwrap();
                         match event.event_type {
                             TraceEventType::IcmpTimeExceeded => {
-                                let x = Hop {
-                                    ttl: event.ttl,
-                                    hop_type: HopType::IcmpTimeExceeded,
-                                    addr: Some(ebpf_to_std_ipaddr(event.addr)),
-                                    rtt: Some(event.arrival - sent_time)
-                                };
-                                if trace[x.ttl as usize].is_none() {
-                                    trace[x.ttl as usize] = Some(x);
-                                    yield x;
-                                    break;
-                                } else {
-                                    warn!("Received duplicate ICMP Time Exceeded event for TTL {ttl}");
-                                }
+                                yield Hop::new(
+                                    ttl,
+                                    HopType::IcmpTimeExceeded,
+                                    Some(ebpf_to_std_ipaddr(event.addr)),
+                                    Some(event.arrival - sent_time),
+                                    self.tracer.ipdb
+                                );
                             }
                             TraceEventType::TcpAck => {
                                 if event.ack_seq - 1 == sent_seq {
-                                    let x = Hop {
+                                   yield Hop::new(
                                         ttl,
-                                        hop_type: HopType::TcpAck,
-                                        addr: Some(self.remote.ip()),
-                                        rtt: Some(event.arrival - sent_time)
-                                    };
-                                    if trace [ttl as usize].is_none() {
-                                        trace[ttl as usize] = Some(x);
-                                        yield x;
-                                        break 'outer;
-                                    } else {
-                                        warn!("Received duplicate TCP Ack event for TTL {ttl}");
-                                    }
+                                        HopType::TcpAck,
+                                        Some(self.remote.ip()),
+                                        Some(event.arrival - sent_time),
+                                        self.tracer.ipdb
+                                    );
+                                    break 'outer;
                                 } else {
                                     ack_seq = event.ack_seq;
                                     seq = event.seq;
                                 }
                             }
                             TraceEventType::TcpRst => {
-                                let x = Hop {
+                                yield  Hop::new(
                                     ttl,
-                                    hop_type: HopType::TcpRst,
-                                    addr: Some(self.remote.ip()),
-                                    rtt: Some(event.arrival - sent_time)
-                                };
-                                if trace[ttl as usize].is_none() {
-                                    trace[ttl as usize] = Some(x);
-                                    yield x;
-                                    break 'outer;
-                                } else {
-                                    warn!("Received duplicate TCP RST event for TTL {ttl}");
-                                }
+                                    HopType::TcpRst,
+                                    Some(self.remote.ip()),
+                                    Some(event.arrival - sent_time),
+                                    self.tracer.ipdb
+                                );
+                                break 'outer;
                             }
                         }
                     }
                 }
-                info!("Trace completed: {:?}", trace);
+        };
+
+        Ok(stream)
+    }
+
+    pub async fn hop_stream<'a>(&'a self) -> anyhow::Result<impl Stream<Item = Hop> + 'a> {
+        let mut internal = Box::pin(self.hop_stream_internal().await?);
+        let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
+
+        let stream = stream! {
+            while let Some(hop) = internal.next().await {
+                let ttl = hop.ttl as usize;
+                if trace[ttl].is_none() {
+                    trace[ttl] = Some(hop.clone());
+                    yield hop;
+                } else {
+                    warn!("Duplicate hop for TTL {ttl}: {hop:?}");
+                }
+            }
+            info!("Trace completed: {trace:?}");
         };
 
         Ok(stream)

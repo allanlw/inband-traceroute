@@ -54,6 +54,9 @@ struct Opt {
     /// Maximum number of hops
     #[arg(long, default_value = "32")]
     max_hops: u8,
+
+    #[clap(long, default_value = "/opt/ipinfoio/ipinfo_lite.mmdb")]
+    ipinfoio_db: PathBuf,
 }
 
 #[tokio::main]
@@ -72,6 +75,12 @@ async fn main() -> anyhow::Result<()> {
     info!("Starting inband-traceroute...");
 
     info!("Using interface: {}", opt.iface);
+
+    info!("Loading IPInfo.io database...");
+    let reader = Box::leak(Box::new(
+        maxminddb::Reader::open_readfile(&opt.ipinfoio_db)
+            .context("Failed to open IPInfo.io database")?,
+    ));
 
     info!("Loading eBPF program...");
 
@@ -98,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V4(ipv4), opt.port),
                 opt.max_hops,
                 trace_map.clone(),
+                reader,
             )
         })
         .transpose()
@@ -111,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
                 SocketAddr::new(IpAddr::V6(ipv6), opt.port),
                 opt.max_hops,
                 trace_map,
+                reader,
             )
         })
         .transpose()
