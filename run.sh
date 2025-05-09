@@ -31,5 +31,5 @@ cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
     --domain "$DOMAIN" \
     --cache-dir ./.cert-cache \
     --ipv4 "$IPV4" \
-    --ipv6 "$IPV6"
-
+    --ipv6 "$IPV6" \
+    --prod
