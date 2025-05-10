@@ -13,7 +13,7 @@ export interface TraceMessage {
   hop_type: string
   addr: string | null
   rtt: number | null
-  enriched_info: EnrichedInfo
+  enriched_info: EnrichedInfo | null
 }
 
 export interface Node {

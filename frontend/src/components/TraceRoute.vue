@@ -2,6 +2,8 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { traceApi } from '@/services/traceApi'
 import type { Node, NodeMap, NodeConnectionMap, TraceMessage, IpVersion } from '@/services/traceApi'
+import HopDisplay from './HopDisplay.vue'
+import Server from './Server.vue'
 
 interface TraceData {
   [ttl: number]: {
@@ -26,17 +28,9 @@ const maxTtl = computed(() => {
 })
 
 const ttlRange = computed(() => {
-  return Array.from({ length: maxTtl.value + 1 }, (_, i) => i).filter(i => i > 0)
+  return Array.from({ length: maxTtl.value + 1 }, (_, i) => i + 1).filter(i => i > 0).reverse()
 })
 
-const formatCountry = (message: TraceMessage | undefined) => {
-  if (!message?.enriched_info) return ''
-  const { country, asn, as_name } = message.enriched_info
-  const parts = []
-  if (country) parts.push(country)
-  if (asn) parts.push(`AS${asn}${as_name ? ` (${as_name})` : ''}`)
-  return parts.join(' - ')
-}
 
 const onNodeMessage = (nodeId: string, ipVersion: IpVersion, message: TraceMessage) => {
   if (!nodeConnections.value[nodeId]) return
@@ -118,118 +112,15 @@ onUnmounted(() => {
 
 <template>
   <div class="p-4">
-    <div class="max-w-[90rem] mx-auto">
-      <div class="mb-6 space-y-4">
-        <!-- Node status cards -->
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          <div
-            v-for="(node, location) in nodes"
-            :key="location"
-            class="p-4 border rounded-md bg-gray-50"
-          >
-            <div class="flex items-center justify-between mb-2">
-              <span class="font-medium uppercase">{{ location }}</span>
-              <div class="flex gap-3">
-                <span
-                  :class="{
-                    'text-green-500': nodeConnections[location]?.ipv4?.status === 'connected',
-                    'text-yellow-500': nodeConnections[location]?.ipv4?.status === 'connecting',
-                    'text-red-500': nodeConnections[location]?.ipv4?.status === 'error',
-                    'text-gray-400': nodeConnections[location]?.ipv4?.status === 'disconnected'
-                  }"
-                  class="text-sm flex items-center gap-1"
-                >
-                  ● v4
-                </span>
-                <span
-                  :class="{
-                    'text-green-500': nodeConnections[location]?.ipv6?.status === 'connected',
-                    'text-yellow-500': nodeConnections[location]?.ipv6?.status === 'connecting',
-                    'text-red-500': nodeConnections[location]?.ipv6?.status === 'error',
-                    'text-gray-400': nodeConnections[location]?.ipv6?.status === 'disconnected'
-                  }"
-                  class="text-sm flex items-center gap-1"
-                >
-                  ● v6
-                </span>
-              </div>
-            </div>
-            <div class="text-sm space-y-1">
-              <div class="text-gray-500">DNS: <span class="ml-2 font-mono">{{ node.dns_name }}</span></div>
-              <div class="text-gray-500">IPv4: <span class="ml-2 font-mono">{{ node.ipv4 }}</span></div>
-              <div class="text-gray-500">IPv6: <span class="ml-2 font-mono text-xs">{{ node.ipv6 }}</span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Trace data table -->
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TTL</th>
-                  <template v-for="(node, location) in nodes" :key="location">
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {{ location }} (v4)
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {{ location }} (v6)
-                    </th>
-                  </template>
-                </tr>
-              </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
-                <tr v-for="ttl in ttlRange" :key="ttl" class="hover:bg-gray-50">
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ ttl }}</td>
-                  <template v-for="(node, location) in nodes" :key="location">
-                    <!-- IPv4 Cell -->
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
-                      <template v-if="traceData[ttl]?.[location]?.ipv4">
-                        <div class="space-y-1">
-                          <div class="font-mono">{{ traceData[ttl][location].ipv4?.addr }}</div>
-                          <div class="text-xs text-gray-500">
-                            {{ traceApi.formatRtt(traceData[ttl][location].ipv4?.rtt || 0) }}ms
-                          </div>
-                          <div class="text-xs text-gray-600">
-                            {{ formatCountry(traceData[ttl][location].ipv4) }}
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else>
-                        <span class="text-gray-400">-</span>
-                      </template>
-                    </td>
-                    <!-- IPv6 Cell -->
-                    <td class="px-6 py-4 whitespace-nowrap text-sm">
-                      <template v-if="traceData[ttl]?.[location]?.ipv6">
-                        <div class="space-y-1">
-                          <div class="font-mono">{{ traceData[ttl][location].ipv6?.addr }}</div>
-                          <div class="text-xs text-gray-500">
-                            {{ traceApi.formatRtt(traceData[ttl][location].ipv6?.rtt || 0) }}ms
-                          </div>
-                          <div class="text-xs text-gray-600">
-                            {{ formatCountry(traceData[ttl][location].ipv6) }}
-                          </div>
-                        </div>
-                      </template>
-                      <template v-else>
-                        <span class="text-gray-400">-</span>
-                      </template>
-                    </td>
-                  </template>
-                </tr>
-                <tr v-if="!maxTtl" class="hover:bg-gray-50">
-                  <td
-                    :colspan="Object.keys(nodes).length * 2 + 1"
-                    class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                  >
-                    No trace data available yet.
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+    <div class="max-w-7xl mx-auto">
+      <div class="space-y-8">
+        <div v-for="(node, nodeId) in nodes" :key="nodeId">
+          <Server
+            :node="node"
+            :nodeId="nodeId"
+            :connection="nodeConnections[nodeId]"
+            :traceData="traceData"
+          />
         </div>
       </div>
     </div>
