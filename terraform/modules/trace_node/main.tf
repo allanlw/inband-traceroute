@@ -1,6 +1,6 @@
 resource "vultr_instance" "instance" {
-  hostname = trim(replace(var.dns_name, ".", "0"), "0")
-  label    = trim(replace(var.dns_name, ".", "0"), "0")
+  hostname = trimsuffix(replace(var.dns_name, ".", "0"), "0")
+  label    = trimsuffix(replace(var.dns_name, ".", "0"), "0")
 
   region = var.region
   plan   = "vc2-4c-8gb"
@@ -12,34 +12,43 @@ resource "vultr_instance" "instance" {
   script_id   = var.startup_script_id
 }
 
-resource "google_dns_record_set" "dev_inband_traceroute_a" {
-  name         = var.dns_name
-  managed_zone = var.dns_zone_name
-  type         = "A"
-  ttl          = 60
-  rrdatas      = [vultr_instance.instance.main_ip]
-}
 
-resource "google_dns_record_set" "dev_inband_traceroute_aaaa" {
-  name         = var.dns_name
-  managed_zone = var.dns_zone_name
-  type         = "AAAA"
-  ttl          = 60
-  rrdatas      = [vultr_instance.instance.v6_main_ip]
-}
+resource "cloudflare_dns_record" "dns_records" {
+  for_each = {
+    main_ipv4 = {
+      prefix = ""
+      type   = "A"
+      ip     = vultr_instance.instance.main_ip
+    }
+    main_ipv6 = {
+      prefix = ""
+      type   = "AAAA"
+      ip     = vultr_instance.instance.v6_main_ip
+    }
+    ipv4_specific = {
+      prefix = "ipv4."
+      type   = "A"
+      ip     = vultr_instance.instance.main_ip
+    }
+    ipv6_specific = {
+      prefix = "ipv6."
+      type   = "AAAA"
+      ip     = vultr_instance.instance.v6_main_ip
+    }
+  }
 
-resource "google_dns_record_set" "ipv4_dev_inband_traceroute_a" {
-  name         = "ipv4.${var.dns_name}"
-  managed_zone = var.dns_zone_name
-  type         = "A"
-  ttl          = 60
-  rrdatas      = [vultr_instance.instance.main_ip]
-}
+  proxied = false
+  zone_id = var.dns_zone_id
+  name    = "${each.value.prefix}${trimsuffix(var.dns_name, ".")}"
+  type    = each.value.type
+  ttl     = 60
+  content = each.value.ip
 
-resource "google_dns_record_set" "ipv6_dev_inband_traceroute_aaaa" {
-  name         = "ipv6.${var.dns_name}"
-  managed_zone = var.dns_zone_name
-  type         = "AAAA"
-  ttl          = 60
-  rrdatas      = [vultr_instance.instance.v6_main_ip]
+
+  // https://github.com/vultr/terraform-provider-vultr/issues/271
+  lifecycle {
+    ignore_changes = [
+      content,
+    ]
+  }
 }

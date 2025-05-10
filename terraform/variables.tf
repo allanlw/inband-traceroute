@@ -9,5 +9,26 @@ variable "ipinfoio_token" {
 }
 
 variable "ssh_pubkey" {
-  type = string
+  type      = string
+  sensitive = true
+}
+
+variable "cloudflare_account_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "cloudflare_access_key_id" {
+  type      = string
+  sensitive = true
+}
+
+variable "cloudflare_secret_access_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "cloudflare_r2_api_key" {
+  type      = string
+  sensitive = true
 }

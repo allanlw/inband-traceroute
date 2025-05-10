@@ -33,7 +33,7 @@ module "trace_node" {
 
   ssh_key_id        = vultr_ssh_key.inband_traceroute_tf.id
   startup_script_id = vultr_startup_script.init.id
-  dns_zone_name     = google_dns_managed_zone.inband_traceroute.name
+  dns_zone_id       = cloudflare_zone.inband_traceroute.id
   dns_name          = "${each.key}.nodes.inband-traceroute.net."
   region            = each.key
 }

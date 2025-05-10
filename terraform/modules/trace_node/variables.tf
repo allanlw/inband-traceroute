@@ -13,8 +13,8 @@ variable "dns_name" {
   type        = string
 }
 
-variable "dns_zone_name" {
-  description = "Google DNS managed zone name"
+variable "dns_zone_id" {
+  description = "Cloudflare DNS Zone ID"
   type        = string
 }
 
