@@ -26,6 +26,10 @@ echo "IPv6: $IPV6"
 export RUST_BACKTRACE=1
 export RUST_LOG=info
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd -P)"
+
+cd "$script_dir/../backend"
+
 cargo run --release --config 'target."cfg(all())".runner="sudo -E"' -- \
     --iface "$INTERFACE" \
     --domain "$DOMAIN" \

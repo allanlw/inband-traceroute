@@ -49,6 +49,6 @@ copied to a Linux server or VM and run there.
 
 Copyright (C) 2025 Allan Wirth
 
-The kernel portion is licensed under GPLv2, everything else (including the userspace portions) are licensed under AGPLv3.
+The ebpf portion is licensed under GPLv2, everything else (including the userspace portions and frontend) are licensed under AGPLv3.
 
 This program incorporates software from [aya-template](https://github.com/aya-rs/aya-template) (see commit bbf949a2) which is used under the terms of the MIT license copyright 2021 Alessandro Decina.
