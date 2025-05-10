@@ -32,7 +32,7 @@ use crate::{
 
 type TraceId = u32;
 
-const STEP_TIMEOUT: Duration = Duration::from_secs(1);
+const STEP_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 pub struct Tracer {
