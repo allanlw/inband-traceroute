@@ -113,8 +113,8 @@ onUnmounted(() => {
 <template>
   <div class="p-4">
     <div class="max-w-7xl mx-auto">
-      <div class="space-y-8">
-        <div v-for="(node, nodeId) in nodes" :key="nodeId">
+      <div class="flex flex-row flex-wrap gap-8 items-start">
+        <div v-for="(node, nodeId) in nodes" :key="nodeId" class="min-w-[350px] flex-1">
           <Server
             :node="node"
             :nodeId="nodeId"

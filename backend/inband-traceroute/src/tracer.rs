@@ -373,8 +373,14 @@ impl TraceHandle {
                 }
                 trace[ttl] = Some(hop.clone());
                 if let Some(addr) = hop.addr {
-                    if let Ok(name) = self.tracer.dns_client.reverse_lookup(&addr).await {
-                        hop.reverse_dns = Some(name);
+                    let res = self.tracer.dns_client.reverse_lookup(&addr).await;
+                    match res {
+                        Err(e) => {
+                            warn!("Failed to resolve reverse DNS for {addr}: {e:#?}");
+                        }
+                        Ok(name) => {
+                            hop.reverse_dns = Some(name);
+                        }
                     }
                 }
                 yield hop;
