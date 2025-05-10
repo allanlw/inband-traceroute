@@ -12,6 +12,19 @@ resource "aws_s3_object" "index" {
   }
 }
 
+
+resource "aws_s3_object" "nodes" {
+  bucket       = aws_s3_bucket.prod.id
+  key          = "nodes.json"
+  content_type = "text/json"
+  content      = jsonencode(module.trace_node)
+
+  lifecycle {
+    ignore_changes = [content_encoding]
+  }
+}
+
+
 # https://github.com/cloudflare/terraform-provider-cloudflare/issues/5567
 resource "cloudflare_r2_custom_domain" "frontend" {
   provider    = cloudflare.r2
