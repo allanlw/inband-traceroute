@@ -6,11 +6,7 @@ use std::{
 
 use async_stream::{stream, try_stream};
 use axum::{
-    body::{Body, Bytes},
-    extract::{ConnectInfo, State},
-    response::{sse::Event, Response, Sse},
-    routing::get,
-    Router,
+    body::{Body, Bytes}, extract::{ConnectInfo, State}, http::HeaderValue, response::{sse::Event, Response, Sse}, routing::get, Router, 
 };
 use futures::Stream;
 use hyper::Method;
@@ -18,9 +14,9 @@ use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
 use tower_http::{
-    trace::{self, TraceLayer},
-    cors::CorsLayer,
+    cors::{AllowOrigin, CorsLayer,}, trace::{self, TraceLayer}
 };
+use http::{request::Parts as RequestParts};
 use tracing::Level;
 
 use crate::tracer::TraceHandle;
@@ -99,12 +95,19 @@ pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
         .state();
 
     let cors = CorsLayer::new()
-        .allow_origin([
-            "http://localhost:*".parse().unwrap(),
-            "http://127.0.0.1:*".parse().unwrap(),
-            "https://*.inband-traceroute.net".parse().unwrap(),
-            "https://inband-traceroute.net".parse().unwrap(),
-        ])
+        .allow_origin(AllowOrigin::predicate(
+            |origin: &HeaderValue, _request_parts: &RequestParts| {
+            let origin = origin.as_bytes();
+            // Allow localhost with any port
+            if origin.starts_with(b"http://localhost:") {
+                return true;
+            }
+            // Allow inband-traceroute.net and subdomains
+            if origin.ends_with(b".inband-traceroute.net") || origin == b"https://inband-traceroute.net" {
+                return true;
+            }
+            false
+        }))
         .allow_methods([Method::GET]);
 
     let app = Router::new()
