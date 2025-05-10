@@ -13,10 +13,14 @@ use axum::{
     Router,
 };
 use futures::Stream;
+use hyper::Method;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
 use tokio_stream::StreamExt;
-use tower_http::trace::{self, TraceLayer};
+use tower_http::{
+    trace::{self, TraceLayer},
+    cors::CorsLayer,
+};
 use tracing::Level;
 
 use crate::tracer::TraceHandle;
@@ -94,10 +98,20 @@ pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
         .directory_lets_encrypt(opt.prod)
         .state();
 
+    let cors = CorsLayer::new()
+        .allow_origin([
+            "http://localhost:*".parse().unwrap(),
+            "http://127.0.0.1:*".parse().unwrap(),
+            "https://*.inband-traceroute.net".parse().unwrap(),
+            "https://inband-traceroute.net".parse().unwrap(),
+        ])
+        .allow_methods([Method::GET]);
+
     let app = Router::new()
         .route("/", get(index_handler))
         .route("/sse", get(sse_handler))
         .with_state(state)
+        .layer(cors)
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))

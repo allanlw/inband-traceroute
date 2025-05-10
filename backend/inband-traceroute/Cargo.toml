@@ -28,7 +28,7 @@ async-stream = { workspace = true }
 futures = { workspace = true }
 network-types = { workspace = true }
 
-tower-http = { workspace = true , features = ["trace"] }
+tower-http = { workspace = true , features = ["trace", "cors"] }
 tracing = { workspace = true }
 socket2 = { workspace = true }
 tracing-subscriber = { workspace = true, features=["env-filter"] }
