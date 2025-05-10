@@ -57,6 +57,9 @@ struct Opt {
 
     #[clap(long, default_value = "/opt/ipinfoio/ipinfo_lite.mmdb")]
     ipinfoio_db: PathBuf,
+
+    #[arg(long, default_value="true")]
+    v4_v6_subdomains: bool,
 }
 
 #[tokio::main]

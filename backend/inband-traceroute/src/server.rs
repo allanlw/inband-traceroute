@@ -88,7 +88,13 @@ async fn sse_handler(
 }
 
 pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
-    let mut acme_state = AcmeConfig::new(vec![opt.domain.clone()])
+    let mut domains = vec![opt.domain.clone()];
+    if opt.v4_v6_subdomains {
+        domains.push("ipv4.".to_owned() + &opt.domain);
+        domains.push("ipv6.".to_owned() + &opt.domain);
+    }
+
+    let mut acme_state = AcmeConfig::new(domains)
         .contact(opt.emails.iter().map(|e| format!("mailto:{e}")))
         .cache_option(opt.cache_dir.clone().map(DirCache::new))
         .directory_lets_encrypt(opt.prod)
