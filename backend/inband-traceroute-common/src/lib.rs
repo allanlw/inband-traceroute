@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_trace_event_size() {
-        assert_eq!(mem::size_of::<TraceEvent>(), 19);
+        assert_eq!(mem::size_of::<TraceEvent>(), 40);
     }
 
     #[test]

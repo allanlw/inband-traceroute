@@ -1,3 +1,4 @@
+mod dns;
 mod ebpf;
 mod hop;
 mod raw;
@@ -58,7 +59,7 @@ struct Opt {
     #[clap(long, default_value = "/opt/ipinfoio/ipinfo_lite.mmdb")]
     ipinfoio_db: PathBuf,
 
-    #[arg(long, default_value="true")]
+    #[arg(long, default_value = "true")]
     v4_v6_subdomains: bool,
 }
 
@@ -84,6 +85,13 @@ async fn main() -> anyhow::Result<()> {
         maxminddb::Reader::open_readfile(&opt.ipinfoio_db)
             .context("Failed to open IPInfo.io database")?,
     ));
+
+    info!("Connecting to DNS server...");
+    let dns_client = Arc::new(
+        dns::ReverseDnsProvider::new()
+            .await
+            .context("Failed to connect to DNS server")?,
+    );
 
     info!("Loading eBPF program...");
 
@@ -111,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
                 opt.max_hops,
                 trace_map.clone(),
                 reader,
+                dns_client.clone(),
             )
         })
         .transpose()
@@ -125,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
                 opt.max_hops,
                 trace_map,
                 reader,
+                dns_client,
             )
         })
         .transpose()

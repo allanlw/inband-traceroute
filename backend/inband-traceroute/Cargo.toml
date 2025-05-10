@@ -41,6 +41,7 @@ serde_derive = { workspace = true }
 serde = { workspace = true }
 nix = { workspace = true }
 maxminddb = { workspace = true }
+hickory-client = { workspace = true }
 
 [build-dependencies]
 anyhow = { workspace = true }

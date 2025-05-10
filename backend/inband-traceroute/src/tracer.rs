@@ -10,6 +10,7 @@ use anyhow::Context;
 use async_stream::stream;
 use etherparse::{ip_number, Ipv4Header, Ipv6FlowLabel, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::stream::{Stream, StreamExt};
+use hickory_client::proto::rr::dns_class;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
 use maxminddb::Reader;
@@ -25,6 +26,7 @@ use tokio::{
 };
 
 use crate::{
+    dns::ReverseDnsProvider,
     ebpf::TraceMap,
     hop::{Hop, HopType},
     raw,
@@ -36,11 +38,12 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 pub struct Tracer {
-    pub listen_addr: SocketAddr,
-    pub max_hops: u8,
-    pub socket: raw::AsyncWriteOnlyIPRawSocket,
-    pub trace_map: Arc<Mutex<TraceMap>>,
-    pub ipdb: &'static Reader<Vec<u8>>,
+    listen_addr: SocketAddr,
+    max_hops: u8,
+    socket: raw::AsyncWriteOnlyIPRawSocket,
+    trace_map: Arc<Mutex<TraceMap>>,
+    ipdb: &'static Reader<Vec<u8>>,
+    dns_client: Arc<ReverseDnsProvider>,
 
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
@@ -60,6 +63,7 @@ impl Tracer {
         max_hops: u8,
         trace_map: Arc<Mutex<TraceMap>>,
         ipdb: &'static Reader<Vec<u8>>,
+        dns_client: Arc<ReverseDnsProvider>,
     ) -> anyhow::Result<Self> {
         let domain = match listen_addr {
             SocketAddr::V4(_) => Domain::IPV4,
@@ -75,6 +79,7 @@ impl Tracer {
             socket,
             trace_map,
             ipdb,
+            dns_client,
             traces: RwLock::new(HashMap::new()),
         })
     }
@@ -343,7 +348,7 @@ impl TraceHandle {
                                     HopType::TcpRst,
                                     Some(self.remote.ip()),
                                     Some(event.arrival - sent_time),
-                                    self.tracer.ipdb
+                                    self.tracer.ipdb,
                                 );
                                 break 'outer;
                             }
@@ -360,14 +365,19 @@ impl TraceHandle {
         let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
 
         let stream = stream! {
-            while let Some(hop) = internal.next().await {
+            while let Some(mut hop) = internal.next().await {
                 let ttl = hop.ttl as usize;
-                if trace[ttl].is_none() {
-                    trace[ttl] = Some(hop.clone());
-                    yield hop;
-                } else {
+                if trace[ttl].is_some() {
                     warn!("Duplicate hop for TTL {ttl}: {hop:?}");
+                    continue;
                 }
+                trace[ttl] = Some(hop.clone());
+                if let Some(addr) = hop.addr {
+                    if let Ok(name) = self.tracer.dns_client.reverse_lookup(&addr).await {
+                        hop.reverse_dns = Some(name);
+                    }
+                }
+                yield hop;
             }
             info!("Trace completed: {trace:?}");
         };

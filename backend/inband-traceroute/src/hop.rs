@@ -42,6 +42,7 @@ pub(crate) struct Hop {
     pub(crate) addr: Option<IpAddr>,
     pub(crate) rtt: Option<u64>,
     pub(crate) enriched_info: Option<IpinfoCountryASN<'static>>,
+    pub(crate) reverse_dns: Option<String>,
 }
 
 impl Hop {
@@ -58,6 +59,7 @@ impl Hop {
             addr,
             rtt,
             enriched_info: addr.and_then(|addr| ipdb.lookup::<IpinfoCountryASN>(addr).unwrap()),
+            reverse_dns: None,
         }
     }
 }
