@@ -6,7 +6,7 @@ resource "vultr_ssh_key" "inband_traceroute_tf" {
 resource "terraform_data" "init_script" {
   input = base64encode(
     templatefile(
-      "${path.module}/init/cloud-init.yml.tftpl",
+      "${path.module}/templates/cloud-init.yml.tftpl",
       {
         ssh_pubkey         = var.ssh_pubkey
         ssh_deploy_key_b64 = base64encode(tls_private_key.inband_traceroute_deploy_key.private_key_openssh)
@@ -36,4 +36,14 @@ module "trace_node" {
   dns_zone_id       = cloudflare_zone.inband_traceroute.id
   dns_name          = "${each.key}.nodes.${local.domain_name}."
   region            = each.key
+}
+
+resource "local_file" "ssh_config" {
+  content = templatefile(
+    "${path.module}/templates/ssh_config.tftpl",
+    {
+      nodes     = module.trace_node
+    }
+  )
+  filename = "${path.module}/ssh_config"
 }

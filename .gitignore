@@ -12,3 +12,4 @@ target/
 
 .terraform/
 .envrc
+ssh_config

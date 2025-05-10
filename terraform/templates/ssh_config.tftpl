@@ -1,0 +1,6 @@
+%{ for region, node in nodes ~}
+Host intr-${region}
+  HostName ${node.ipv4}
+  User intr
+
+%{ endfor ~}
