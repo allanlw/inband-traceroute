@@ -1,6 +1,10 @@
 {
     "recommendations": [
         "rust-lang.rust-analyzer",
-        "hashicorp.terraform"
+        "hashicorp.terraform",
+        "Vue.volar",
+        "dbaeumer.vscode-eslint",
+        "EditorConfig.EditorConfig",
+        "esbenp.prettier-vscode"
     ]
 }
