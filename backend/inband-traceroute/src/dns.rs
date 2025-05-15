@@ -37,10 +37,20 @@ impl ReverseDnsProvider {
             .await
             .context("Reverse DNS lookup failed")?;
 
-        if let Some(RData::PTR(name)) = response.answers().get(0).map(|f| f.data()) {
+        let answers = response.answers();
+        if answers.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No answer found: {:?}",
+                response.header().response_code()
+            ));
+        }
+
+        let answer = answers[0].data();
+
+        if let RData::PTR(name) = answer {
             Ok(name.to_string())
         } else {
-            Err(anyhow::anyhow!("Unexpected response type"))
+            Err(anyhow::anyhow!("Unexpected answer: {:?}", answer))
         }
     }
 

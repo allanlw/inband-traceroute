@@ -24,7 +24,7 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::{self, TraceLayer},
 };
-use tracing::Level;
+use tracing::{warn, Level};
 
 use crate::{
     dns::ReverseDnsProvider,
@@ -34,7 +34,10 @@ use crate::{
 #[derive(serde::Serialize, Debug)]
 pub enum TraceEvent {
     Hop(crate::hop::Hop),
-    ReverseDns { ip: IpAddr, name: String },
+    ReverseDns {
+        ip: IpAddr,
+        name: Result<String, String>,
+    },
 }
 
 #[derive(Debug)]
@@ -52,21 +55,6 @@ impl AppState {
         .expect("If we got a connection in this protocol, the program should have a tracer for it")
     }
 
-    async fn trace_do_reverse_dns(
-        dns_client: Arc<ReverseDnsProvider>,
-        tx: &tokio::sync::mpsc::UnboundedSender<anyhow::Result<TraceEvent>>,
-        ip: IpAddr,
-    ) -> anyhow::Result<()> {
-        tx.send(
-            dns_client
-                .reverse_lookup(&ip)
-                .await
-                .map(|name| TraceEvent::ReverseDns { ip, name }),
-        )
-        .unwrap();
-        Ok(())
-    }
-
     async fn trace_stream_inner(
         tracer: Arc<Tracer>,
         trace_handle: Arc<TraceHandle>,
@@ -80,9 +68,14 @@ impl AppState {
                 let tx = tx.clone();
                 let dns_client = tracer.dns_client.clone();
                 tokio::spawn(async move {
-                    if let Err(err) = Self::trace_do_reverse_dns(dns_client, &tx, ip).await {
-                        tx.send(Err(err)).unwrap();
-                    }
+                    tx.send(Ok(TraceEvent::ReverseDns {
+                        ip,
+                        name: dns_client
+                            .reverse_lookup(&ip)
+                            .await
+                            .map_err(|err| err.to_string()),
+                    }))
+                    .unwrap();
                 });
             }
         }
@@ -112,46 +105,34 @@ impl AppState {
     }
 }
 
-// TODO: Fix panics
-async fn index_handler(
-    ConnectInfo(remote): ConnectInfo<SocketAddr>,
-    state: State<Arc<AppState>>,
-) -> Response {
-    let tracer = state.get_tracer(remote);
-
-    info!("Remote: {remote:?}");
-
-    let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
-
-    let stream = try_stream! {
-        let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
-        while let Some(hop) = hop_stream.next().await {
-            let hop = format!("{hop}\n");
-            yield hop.into();
-            yield Bytes::from_static(b"<br>\n");
-        }
-    };
-
+async fn index_handler() -> Response {
     Response::builder()
         .status(200)
         .header("Content-Type", "text/html; charset=UTF-8")
-        .body(Body::from_stream(stream.map(
-            |b: anyhow::Result<Bytes>| -> anyhow::Result<Bytes> { b },
-        )))
+        .body(Body::from("Hello World!"))
         .unwrap()
 }
 
 async fn sse_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     state: State<Arc<AppState>>,
-) -> Sse<impl Stream<Item = anyhow::Result<Event>>> {
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let stream_result = state.trace_stream(remote).await.unwrap();
 
-    Sse::new(stream_result.map(|event| -> anyhow::Result<Event> {
-        let event = event?;
-        let res = Event::default().json_data(event)?;
-        Ok(res)
-    }))
+    Sse::new(
+        stream_result.filter_map(|event| -> Option<Result<Event, Infallible>> {
+            match event {
+                Ok(event) => {
+                    let event = Event::default().json_data(event).unwrap();
+                    Some(Ok(event))
+                }
+                Err(err) => {
+                    warn!("Error: {err}");
+                    None
+                }
+            }
+        }),
+    )
 }
 
 pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
