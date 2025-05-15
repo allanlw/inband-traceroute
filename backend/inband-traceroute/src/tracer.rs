@@ -43,7 +43,7 @@ pub struct Tracer {
     socket: raw::AsyncWriteOnlyIPRawSocket,
     trace_map: Arc<Mutex<TraceMap>>,
     ipdb: &'static Reader<Vec<u8>>,
-    dns_client: Arc<ReverseDnsProvider>,
+    pub(crate) dns_client: Arc<ReverseDnsProvider>,
 
     traces: RwLock<HashMap<TraceId, Weak<TraceHandle>>>,
 }
@@ -365,24 +365,13 @@ impl TraceHandle {
         let mut trace: Vec<Option<Hop>> = vec![None; self.tracer.max_hops as usize];
 
         let stream = stream! {
-            while let Some(mut hop) = internal.next().await {
+            while let Some(hop) = internal.next().await {
                 let ttl = hop.ttl as usize;
                 if trace[ttl].is_some() {
                     warn!("Duplicate hop for TTL {ttl}: {hop:?}");
                     continue;
                 }
                 trace[ttl] = Some(hop.clone());
-                if let Some(addr) = hop.addr {
-                    let res = self.tracer.dns_client.reverse_lookup(&addr).await;
-                    match res {
-                        Err(e) => {
-                            warn!("Failed to resolve reverse DNS for {addr}: {e:#?}");
-                        }
-                        Ok(name) => {
-                            hop.reverse_dns = Some(name);
-                        }
-                    }
-                }
                 yield hop;
             }
             info!("Trace completed: {trace:?}");

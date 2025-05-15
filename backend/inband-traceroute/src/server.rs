@@ -1,25 +1,38 @@
 use std::{
     convert::Infallible,
     net::{IpAddr, SocketAddr},
+    ops::DerefMut,
     sync::Arc,
 };
 
 use async_stream::{stream, try_stream};
 use axum::{
-    body::{Body, Bytes}, extract::{ConnectInfo, State}, http::HeaderValue, response::{sse::Event, Response, Sse}, routing::get, Router, 
+    body::{Body, Bytes},
+    extract::{ConnectInfo, State},
+    http::HeaderValue,
+    response::{sse::Event, Response, Sse},
+    routing::get,
+    Router,
 };
-use futures::Stream;
+use futures::{Stream, TryStream};
+use http::request::Parts as RequestParts;
 use hyper::Method;
 use log::{error, info};
 use rustls_acme::{caches::DirCache, AcmeConfig};
-use tokio_stream::StreamExt;
+use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use tower_http::{
-    cors::{AllowOrigin, CorsLayer,}, trace::{self, TraceLayer}
+    cors::{AllowOrigin, CorsLayer},
+    trace::{self, TraceLayer},
 };
-use http::{request::Parts as RequestParts};
 use tracing::Level;
 
 use crate::tracer::TraceHandle;
+
+#[derive(serde::Serialize, Debug)]
+pub enum TraceEvent {
+    Hop(crate::hop::Hop),
+    ReverseDns { ip: IpAddr, name: String },
+}
 
 #[derive(Debug)]
 pub(crate) struct AppState {
@@ -34,6 +47,44 @@ impl AppState {
             SocketAddr::V6(_) => self.tracer_v6.clone(),
         }
         .expect("If we got a connection in this protocol, the program should have a tracer for it")
+    }
+
+    async fn trace_stream(
+        &self,
+        remote: SocketAddr,
+    ) -> anyhow::Result<impl Stream<Item = anyhow::Result<TraceEvent>>> {
+        let tracer = self.get_tracer(remote);
+
+        info!("Remote: {remote:?}");
+
+        let trace_handle = TraceHandle::start_trace(tracer.clone(), remote).await?;
+
+        // channels automatically close when all senders are dropped
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<anyhow::Result<TraceEvent>>();
+
+        tokio::spawn(async move {
+            let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
+            while let Some(hop) = hop_stream.next().await {
+                let addr = hop.addr;
+                tx.send(Ok(TraceEvent::Hop(hop))).unwrap();
+                if let Some(ip) = addr {
+                    let tx = tx.clone();
+                    let tracer = tracer.clone();
+                    tokio::spawn(async move {
+                        tx.send(
+                            tracer
+                                .dns_client
+                                .reverse_lookup(&ip)
+                                .await
+                                .map(|name| TraceEvent::ReverseDns { ip, name }),
+                        )
+                        .unwrap();
+                    });
+                }
+            }
+        });
+
+        Ok(UnboundedReceiverStream::new(rx))
     }
 }
 
@@ -69,22 +120,14 @@ async fn index_handler(
 async fn sse_handler(
     ConnectInfo(remote): ConnectInfo<SocketAddr>,
     state: State<Arc<AppState>>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let tracer = state.get_tracer(remote);
+) -> Sse<impl Stream<Item = anyhow::Result<Event>>> {
+    let stream_result = state.trace_stream(remote).await.unwrap();
 
-    info!("Remote: {remote:?}");
-
-    let trace_handle = TraceHandle::start_trace(tracer, remote).await.unwrap();
-
-    let stream = stream! {
-        let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
-        while let Some(hop) = hop_stream.next().await {
-            yield Event::default().json_data(hop).unwrap();
-        }
-    }
-    .map(Ok);
-
-    Sse::new(stream)
+    Sse::new(stream_result.map(|event| -> anyhow::Result<Event> {
+        let event = event?;
+        let res = Event::default().json_data(event)?;
+        Ok(res)
+    }))
 }
 
 pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
@@ -103,17 +146,20 @@ pub(crate) fn setup_server(opt: &crate::Opt, state: Arc<AppState>) {
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::predicate(
             |origin: &HeaderValue, _request_parts: &RequestParts| {
-            let origin = origin.as_bytes();
-            // Allow localhost with any port
-            if origin.starts_with(b"http://localhost:") {
-                return true;
-            }
-            // Allow inband-traceroute.net and subdomains
-            if origin.ends_with(b".inband-traceroute.net") || origin == b"https://inband-traceroute.net" {
-                return true;
-            }
-            false
-        }))
+                let origin = origin.as_bytes();
+                // Allow localhost with any port
+                if origin.starts_with(b"http://localhost:") {
+                    return true;
+                }
+                // Allow inband-traceroute.net and subdomains
+                if origin.ends_with(b".inband-traceroute.net")
+                    || origin == b"https://inband-traceroute.net"
+                {
+                    return true;
+                }
+                false
+            },
+        ))
         .allow_methods([Method::GET]);
 
     let app = Router::new()
