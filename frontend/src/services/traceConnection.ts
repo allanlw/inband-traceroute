@@ -33,6 +33,7 @@ export class TraceConnection extends EventTarget {
       const evt = JSON.parse(event.data)
       if (evt == "Done") {
         this._status = 'done'
+        this.publish()
       } else if (evt && 'Hop' in evt) {
         const hop = evt.Hop
         this.traceData[hop.ttl] = hop
