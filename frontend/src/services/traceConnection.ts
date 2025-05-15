@@ -31,7 +31,9 @@ export class TraceConnection extends EventTarget {
     this.eventSource = new EventSource(url)
     this.eventSource.onmessage = (event) => {
       const evt = JSON.parse(event.data)
-      if (evt && 'Hop' in evt) {
+      if (evt == "Done") {
+        this._status = 'done'
+      } else if (evt && 'Hop' in evt) {
         const hop = evt.Hop
         this.traceData[hop.ttl] = hop
         this.publish()

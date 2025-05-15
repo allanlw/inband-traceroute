@@ -23,7 +23,7 @@ export interface ReverseDnsMessage {
   name: { Ok?: string; Err?: string }
 }
 
-export type TraceEvent = { Hop: TraceMessage } | { ReverseDns: ReverseDnsMessage }
+export type TraceEvent = { Hop: TraceMessage } | { ReverseDns: ReverseDnsMessage } | "Done"
 
 export interface Node {
   dns_name: string
