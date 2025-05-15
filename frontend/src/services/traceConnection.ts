@@ -1,23 +1,31 @@
 import type { Node } from '@/services/traceApi'
 
-export type TraceEvent =
-  | { type: 'hop'; ttl: number; hop: any }
-  | { type: 'reverseDns'; ttl: number; reverseDns: any }
-  | { type: 'error'; error: any }
+export type TraceUpdateEvent = {
+  hops: [number, any][];
+  reverseDnsMap: { [ttl: number]: any };
+  status: 'not-started' | 'in-progress' | 'done';
+}
 
-export class TraceConnection {
+export class TraceConnection extends EventTarget {
   private eventSource: EventSource | null = null
   private traceData: { [ttl: number]: any } = {}
   private reverseDns: { [ttl: number]: any } = {}
-  private listeners: Array<(events: { hops: [number, any][]; reverseDnsMap: { [ttl: number]: any } }) => void> = []
+  private _status: 'not-started' | 'in-progress' | 'done' = 'not-started'
 
   constructor(
     private node: Node,
     private protocol: 'IPv4' | 'IPv6',
     private getNodeUrl: (node: Node, protoKey: string) => string
-  ) {}
+  ) {
+    super()
+  }
+
+  get status() {
+    return this._status
+  }
 
   connect() {
+    this._status = 'in-progress'
     const protoKey = this.protocol === 'IPv4' ? 'ipv4' : 'ipv6'
     const url = this.getNodeUrl(this.node, protoKey)
     this.eventSource = new EventSource(url)
@@ -40,6 +48,7 @@ export class TraceConnection {
     this.eventSource.onerror = (err) => {
       this.eventSource?.close()
       this.eventSource = null
+      this._status = 'done'
       this.publish()
     }
   }
@@ -47,18 +56,25 @@ export class TraceConnection {
   disconnect() {
     this.eventSource?.close()
     this.eventSource = null
+    this._status = 'done'
+    this.publish()
   }
 
-  onUpdate(listener: (events: { hops: [number, any][]; reverseDnsMap: { [ttl: number]: any } }) => void) {
-    this.listeners.push(listener)
+  addUpdateListener(listener: (event: TraceUpdateEvent) => void) {
+    this.addEventListener('update', (e: Event) => {
+      listener((e as CustomEvent<TraceUpdateEvent>).detail)
+    })
   }
 
   private publish() {
     const hops = Object.entries(this.traceData)
       .map(([k, v]) => [Number(k), v] as [number, any])
       .sort((a, b) => b[0] - a[0])
-    for (const listener of this.listeners) {
-      listener({ hops, reverseDnsMap: { ...this.reverseDns } })
+    const event: TraceUpdateEvent = {
+      hops,
+      reverseDnsMap: { ...this.reverseDns },
+      status: this._status
     }
+    this.dispatchEvent(new CustomEvent<TraceUpdateEvent>('update', { detail: event }))
   }
 }

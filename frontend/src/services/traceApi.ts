@@ -1,11 +1,12 @@
 export interface EnrichedInfo {
   country: string | null
-  country_name: string | null
+  country_code: string | null
   continent: string | null
-  continent_name: string | null
+  continent_code: string | null
   asn: string | null
   as_name: string | null
   as_domain: string | null
+  ip: string | null
 }
 
 export interface TraceMessage {

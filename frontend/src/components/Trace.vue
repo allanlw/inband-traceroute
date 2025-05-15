@@ -13,7 +13,8 @@ const props = defineProps<{
 const { node, protocol } = toRefs(props)
 
 const hopEntries = ref<Array<[number, any]>>([])
-const reverseDnsMap = ref<{ [ttl: number]: any }>({})
+const reverseDnsMapRef = ref<{ [ttl: number]: any }>({})
+const traceStatus = ref<'not-started' | 'in-progress' | 'done'>('not-started')
 let connection: TraceConnection | null = null
 
 function setupConnection() {
@@ -24,29 +25,32 @@ function setupConnection() {
     return `https://${prefix}${baseDomain}/sse`
   })
   connection.connect()
-  connection.onUpdate(({ hops, reverseDnsMap: rmap }) => {
+  connection.addUpdateListener(({ hops, reverseDnsMap, status }) => {
     hopEntries.value = hops
-    reverseDnsMap.value = rmap
+    reverseDnsMapRef.value = { ...reverseDnsMap }
+    traceStatus.value = status
   })
 }
 
-onMounted(setupConnection)
+onMounted(() => {
+  traceStatus.value = 'not-started'
+  setupConnection()
+})
 onUnmounted(() => { connection?.disconnect() })
 </script>
 
 <template>
   <div class="rounded-lg overflow-hidden bg-white w-full">
-    <div class="px-4 py-2 bg-gray-50 border-b">
+    <div class="px-4 py-2 bg-gray-50 border-b flex items-center gap-4">
       <h3 class="text-sm font-medium text-gray-700">{{ protocol }}</h3>
+      <span v-if="traceStatus === 'not-started'" class="text-xs text-gray-400">Not started</span>
+      <span v-else-if="traceStatus === 'in-progress'" class="text-xs text-blue-500 animate-pulse">In progress…</span>
+      <span v-else-if="traceStatus === 'done'" class="text-xs text-green-600">Done</span>
     </div>
     <div class="divide-y divide-gray-100">
       <div v-for="([ttl, hop], idx) in hopEntries" :key="ttl" class="px-2 py-1 flex items-center gap-2 min-h-[36px]">
-        <div class="flex items-center mr-2">
-          <div class="w-7 text-xs text-gray-500 flex-shrink-0 text-right">{{ ttl }}</div>
-          <div class="h-6 w-px bg-blue-400 mx-2"></div>
-        </div>
         <div class="flex-1">
-          <HopDisplay :message="hop" :reverseDns="reverseDnsMap[ttl]" />
+          <HopDisplay :message="hop" :reverseDns="reverseDnsMapRef[ttl]" />
         </div>
       </div>
     </div>

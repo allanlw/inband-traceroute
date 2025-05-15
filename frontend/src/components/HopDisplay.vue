@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { TraceMessage, ReverseDnsMessage } from '@/services/traceApi'
-import { traceApi } from '@/services/traceApi'
+import type { TraceMessage, ReverseDnsMessage, EnrichedInfo } from '@/services/traceApi'
 
 const props = defineProps<{
   message?: TraceMessage
@@ -8,15 +7,6 @@ const props = defineProps<{
 }>()
 
 console.log('HopDisplay props:', { message: props.message, reverseDns: props.reverseDns })
-
-const formatCountry = (message: TraceMessage | undefined) => {
-  if (!message?.enriched_info) return ''
-  const { country, as_domain } = message.enriched_info
-  const parts = []
-  if (country) parts.push(country)
-  if (as_domain) parts.push(as_domain)
-  return parts.join(' - ')
-}
 
 const isTimeout = (message: TraceMessage | undefined) => {
   return message?.hop_type === 'Timeout'
@@ -33,38 +23,81 @@ const formatRtt = (rtt: number) =>{
     return (rtt / 1_000_000).toFixed(2) // Convert nanoseconds to milliseconds
   };
 
+const getCountryDisplay = (enriched: EnrichedInfo | null) => {
+  if (!enriched?.country_code) return null
+  return {
+    code: enriched.country_code,
+    name: enriched.country || enriched.country_code
+  }
+}
+
+const getAsnDisplay = (enriched: EnrichedInfo | null) => {
+  if (!enriched?.asn) return null
+  return {
+    asn: enriched.asn,
+    asName: enriched.as_name,
+    asDomain: enriched.as_domain
+  }
+}
 </script>
 
 <template>
-  <div v-if="message" class="flex flex-col justify-center min-h-[36px] py-1 px-2">
-    <template v-if="isTimeout(message)">
-      <div class="flex items-center justify-between w-full">
-        <div class="text-xs text-gray-400 mr-2">timeout</div>
-        <div class="text-gray-400 italic">* * *</div>
-      </div>
+  <div class="flex flex-row items-center gap-2 min-h-[36px] py-1 px-2 w-full max-w-full text-xs">
+    <template v-if="!message">
+      <span class="text-gray-400 w-[32px] text-center">-</span>
+      <span class="text-gray-400 w-[80px] text-center">-</span>
+      <span class="text-gray-400 w-[40px] text-center">-</span>
+      <span class="text-gray-400 w-[40px] text-center">-</span>
+      <span class="text-gray-400 w-[80px] text-center">-</span>
+    </template>
+    <template v-else-if="isTimeout(message)">
+      <span class="text-gray-400 w-[32px] text-center">{{ message.ttl ?? '-' }}</span>
+      <span class="text-gray-400 w-[80px] text-center">timeout</span>
+      <span class="text-gray-400 italic w-[40px] text-center">* * *</span>
+      <span class="text-gray-400 w-[40px] text-center">-</span>
+      <span class="text-gray-400 w-[80px] text-center">-</span>
     </template>
     <template v-else>
-      <div class="flex items-center justify-between w-full">
-        <div class="font-mono truncate max-w-[120px]">
-          <template v-if="message && message.addr">
-            <span v-if="message.addr.includes(':')">
-              {{ message.addr.length > 18 ? message.addr.slice(0, 8) + '…' + message.addr.slice(-6) : message.addr }}
-            </span>
-            <span v-else>{{ message.addr }}</span>
-          </template>
-          <span v-else class="text-gray-400">-</span>
-        </div>
-        <div class="text-xs text-gray-500 ml-2 whitespace-nowrap text-right">
-          {{ formatRtt(message?.rtt || 0) }}ms
-        </div>
-      </div>
-      <div class="text-xs text-gray-600 truncate max-w-full" style="max-width: 180px;">
-        {{ formatCountry(message)?.length > 32 ? formatCountry(message)?.slice(0, 29) + '…' : formatCountry(message) }}
-      </div>
-      <div v-if="reverseDns && reverseDns.name" class="text-xs text-blue-700 truncate max-w-full" style="max-width: 180px;">
-        {{ getReverseDns(reverseDns) }}
-      </div>
+      <!-- TTL -->
+      <span class="w-[32px] text-center">{{ message.ttl ?? '-' }}</span>
+      <!-- Address -->
+      <span class="font-mono truncate w-[80px]" :title="message.addr || '-'">
+        <template v-if="message.addr">
+          <span v-if="message.addr.includes(':')">
+            {{ message.addr.length > 18 ? message.addr.slice(0, 8) + '…' + message.addr.slice(-6) : message.addr }}
+          </span>
+          <span v-else>{{ message.addr }}</span>
+        </template>
+        <span v-else class="text-gray-400">-</span>
+      </span>
+      <!-- RTT -->
+      <span class="text-gray-500 w-[48px] text-right" :title="message.rtt ? formatRtt(message.rtt) + ' ms' : '-'">
+        <template v-if="message.rtt !== undefined && message.rtt !== null">
+          {{ formatRtt(message.rtt) }}
+        </template>
+        <span v-else class="text-gray-400">-</span>
+      </span>
+      <!-- Country -->
+      <span class="w-[40px] text-center">
+        <template v-if="getCountryDisplay(message.enriched_info)">
+          <abbr :title="getCountryDisplay(message.enriched_info)?.name">
+            {{ getCountryDisplay(message.enriched_info)?.code }}
+          </abbr>
+        </template>
+        <span v-else class="text-gray-400">-</span>
+      </span>
+      <!-- ASN -->
+      <span class="w-[80px] text-center">
+        <template v-if="getAsnDisplay(message.enriched_info)">
+          <abbr :title="[getAsnDisplay(message.enriched_info)?.asName, getAsnDisplay(message.enriched_info)?.asDomain].filter(Boolean).join(' | ')">
+            {{ getAsnDisplay(message.enriched_info)?.asn }}
+          </abbr>
+        </template>
+        <span v-else class="text-gray-400">-</span>
+      </span>
     </template>
   </div>
-  <span v-else class="text-gray-400">-</span>
+  <div v-if="reverseDns && reverseDns.name && getReverseDns(reverseDns)" class="text-xs text-blue-700 truncate max-w-full pl-2" style="max-width: 180px;">
+    {{ getReverseDns(reverseDns) }}
+  </div>
 </template>
