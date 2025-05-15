@@ -14,7 +14,7 @@ use axum::{
     routing::get,
     Router,
 };
-use futures::{Stream, TryStream};
+use futures::{Stream, TryStream, TryStreamExt};
 use http::request::Parts as RequestParts;
 use hyper::Method;
 use log::{error, info};
@@ -39,6 +39,7 @@ pub enum TraceEvent {
         ip: IpAddr,
         name: Result<String, String>,
     },
+    Done,
 }
 
 #[derive(Debug)]
@@ -104,7 +105,9 @@ impl AppState {
             }
         });
 
-        Ok(UnboundedReceiverStream::new(rx))
+        Ok(UnboundedReceiverStream::new(rx).chain(stream! {
+            yield Ok(TraceEvent::Done);
+        }))
     }
 }
 
