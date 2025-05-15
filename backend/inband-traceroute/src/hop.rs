@@ -1,6 +1,7 @@
+use std::{fmt, net::IpAddr};
+
 use maxminddb::Reader;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub(crate) enum HopType {

@@ -1,20 +1,19 @@
 use std::{
     convert::Infallible,
     net::{IpAddr, SocketAddr},
-    ops::DerefMut,
     sync::Arc,
 };
 
-use async_stream::{stream, try_stream};
+use async_stream::stream;
 use axum::{
-    body::{Body, Bytes},
+    body::Body,
     extract::{ConnectInfo, State},
     http::HeaderValue,
     response::{sse::Event, Response, Sse},
     routing::get,
     Router,
 };
-use futures::{Stream, TryStream, TryStreamExt};
+use futures::Stream;
 use http::request::Parts as RequestParts;
 use hyper::Method;
 use log::{error, info};
@@ -26,10 +25,7 @@ use tower_http::{
 };
 use tracing::{warn, Level};
 
-use crate::{
-    dns::ReverseDnsProvider,
-    tracer::{TraceHandle, Tracer},
-};
+use crate::tracer::{TraceHandle, Tracer};
 
 #[derive(serde::Serialize, Debug)]
 pub enum TraceEvent {

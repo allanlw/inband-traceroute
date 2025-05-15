@@ -1,4 +1,5 @@
 use core::{fmt, net::IpAddr};
+
 use hickory_resolver::{
     config::ResolverConfig, name_server::TokioConnectionProvider, Resolver, TokioResolver,
 };

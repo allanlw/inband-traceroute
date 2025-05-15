@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { traceApi } from '@/services/traceApi'
-import type { NodeMap } from '@/services/traceApi'
-import Server from './Server.vue'
+import { ref, onMounted } from 'vue';
+import { traceApi } from '@/services/traceApi';
+import type { NodeMap } from '@/services/traceApi';
+import Server from './Server.vue';
 
-const nodes = ref<NodeMap>({})
-const isLoadingNodes = ref(false)
-const nodeError = ref<string | null>(null)
+const nodes = ref<NodeMap>({});
+const isLoadingNodes = ref(false);
+const nodeError = ref<string | null>(null);
 
 const fetchNodes = async () => {
-  isLoadingNodes.value = true
-  nodeError.value = null
+  isLoadingNodes.value = true;
+  nodeError.value = null;
   try {
-    nodes.value = await traceApi.fetchNodes()
+    nodes.value = await traceApi.fetchNodes();
   } catch (error) {
-    nodeError.value = error instanceof Error ? error.message : 'Failed to load nodes'
-    console.error('Error fetching nodes:', error)
+    nodeError.value = error instanceof Error ? error.message : 'Failed to load nodes';
+    console.error('Error fetching nodes:', error);
   } finally {
-    isLoadingNodes.value = false
+    isLoadingNodes.value = false;
   }
-}
+};
 
 onMounted(() => {
-  fetchNodes()
-})
+  fetchNodes();
+});
 </script>
 
 <template>

@@ -12,5 +12,5 @@
 </template>
 
 <script setup lang="ts">
-import TraceRoute from './components/TraceRoute.vue'
+import TraceRoute from './components/TraceRoute.vue';
 </script>

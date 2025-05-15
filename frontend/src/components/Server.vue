@@ -1,12 +1,12 @@
 // This file has been renamed to Server.vue
 <script setup lang="ts">
-import type { Node } from '@/services/traceApi'
-import Trace from './Trace.vue'
+import type { Node } from '@/services/traceApi';
+import Trace from './Trace.vue';
 
 defineProps<{
-  node: Node
-  nodeId: string
-}>()
+  node: Node;
+  nodeId: string;
+}>();
 </script>
 
 <template>
