@@ -1,21 +1,37 @@
 <script setup lang="ts">
-import type { TraceData, TraceMessage } from '@/services/traceApi'
+import type { Node } from '@/services/traceApi'
 import HopDisplay from './HopDisplay.vue'
-import { computed } from 'vue'
+import { ref, onMounted, onUnmounted, toRefs } from 'vue'
+import { traceApi } from '@/services/traceApi'
+import { TraceConnection } from '@/services/traceConnection'
 
-const props = defineProps<{ traceData: TraceData; nodeId: string; protocol: 'IPv4' | 'IPv6' }>()
+const props = defineProps<{
+  node: Node
+  nodeId: string
+  protocol: 'IPv4' | 'IPv6'
+}>()
+const { node, protocol } = toRefs(props)
 
-const hopEntries = computed(() => {
-  const protoKey = props.protocol === 'IPv4' ? 'ipv4' : 'ipv6'
-  const entries: Array<[number, TraceMessage]> = []
-  Object.entries(props.traceData).forEach(([ttl, data]) => {
-    if (data[props.nodeId]?.[protoKey]) {
-      entries.push([Number(ttl), data[props.nodeId][protoKey]])
-    }
+const hopEntries = ref<Array<[number, any]>>([])
+const reverseDnsMap = ref<{ [ttl: number]: any }>({})
+let connection: TraceConnection | null = null
+
+function setupConnection() {
+  connection = new TraceConnection(node.value, protocol.value, (n, p) => {
+    // Use the same logic as before for node URL
+    const baseDomain = n.dns_name
+    const prefix = p === 'ipv4' ? 'ipv4.' : 'ipv6.'
+    return `https://${prefix}${baseDomain}/sse`
   })
-  // Sort by TTL descending (last event on top)
-  return entries.sort((a, b) => b[0] - a[0])
-})
+  connection.connect()
+  connection.onUpdate(({ hops, reverseDnsMap: rmap }) => {
+    hopEntries.value = hops
+    reverseDnsMap.value = rmap
+  })
+}
+
+onMounted(setupConnection)
+onUnmounted(() => { connection?.disconnect() })
 </script>
 
 <template>
@@ -30,7 +46,7 @@ const hopEntries = computed(() => {
           <div class="h-6 w-px bg-blue-400 mx-2"></div>
         </div>
         <div class="flex-1">
-          <HopDisplay :message="hop" />
+          <HopDisplay :message="hop" :reverseDns="reverseDnsMap[ttl]" />
         </div>
       </div>
     </div>
