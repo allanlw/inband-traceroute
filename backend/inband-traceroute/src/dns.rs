@@ -15,7 +15,7 @@ pub(crate) struct ReverseDnsProvider {
     client: Mutex<Client>,
 }
 
-const UPSTREAM: ([u8; 4], u16) = ([8, 8, 8, 8], 53);
+const UPSTREAM: ([u8; 4], u16) = ([1, 1, 1, 1], 53);
 
 impl ReverseDnsProvider {
     pub async fn new() -> anyhow::Result<Self> {
