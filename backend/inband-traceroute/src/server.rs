@@ -26,7 +26,10 @@ use tower_http::{
 };
 use tracing::Level;
 
-use crate::tracer::TraceHandle;
+use crate::{
+    dns::ReverseDnsProvider,
+    tracer::{TraceHandle, Tracer},
+};
 
 #[derive(serde::Serialize, Debug)]
 pub enum TraceEvent {
@@ -49,6 +52,43 @@ impl AppState {
         .expect("If we got a connection in this protocol, the program should have a tracer for it")
     }
 
+    async fn trace_do_reverse_dns(
+        dns_client: Arc<ReverseDnsProvider>,
+        tx: &tokio::sync::mpsc::UnboundedSender<anyhow::Result<TraceEvent>>,
+        ip: IpAddr,
+    ) -> anyhow::Result<()> {
+        tx.send(
+            dns_client
+                .reverse_lookup(&ip)
+                .await
+                .map(|name| TraceEvent::ReverseDns { ip, name }),
+        )
+        .unwrap();
+        Ok(())
+    }
+
+    async fn trace_stream_inner(
+        tracer: Arc<Tracer>,
+        trace_handle: Arc<TraceHandle>,
+        tx: &tokio::sync::mpsc::UnboundedSender<anyhow::Result<TraceEvent>>,
+    ) -> anyhow::Result<()> {
+        let mut hop_stream = Box::pin(trace_handle.hop_stream().await?);
+        while let Some(hop) = hop_stream.next().await {
+            let addr = hop.addr;
+            tx.send(Ok(TraceEvent::Hop(hop))).unwrap();
+            if let Some(ip) = addr {
+                let tx = tx.clone();
+                let dns_client = tracer.dns_client.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = Self::trace_do_reverse_dns(dns_client, &tx, ip).await {
+                        tx.send(Err(err)).unwrap();
+                    }
+                });
+            }
+        }
+        Ok(())
+    }
+
     async fn trace_stream(
         &self,
         remote: SocketAddr,
@@ -63,24 +103,8 @@ impl AppState {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<anyhow::Result<TraceEvent>>();
 
         tokio::spawn(async move {
-            let mut hop_stream = Box::pin(trace_handle.hop_stream().await.unwrap());
-            while let Some(hop) = hop_stream.next().await {
-                let addr = hop.addr;
-                tx.send(Ok(TraceEvent::Hop(hop))).unwrap();
-                if let Some(ip) = addr {
-                    let tx = tx.clone();
-                    let tracer = tracer.clone();
-                    tokio::spawn(async move {
-                        tx.send(
-                            tracer
-                                .dns_client
-                                .reverse_lookup(&ip)
-                                .await
-                                .map(|name| TraceEvent::ReverseDns { ip, name }),
-                        )
-                        .unwrap();
-                    });
-                }
+            if let Err(err) = Self::trace_stream_inner(tracer, trace_handle, &tx).await {
+                tx.send(Err(err)).unwrap();
             }
         });
 
