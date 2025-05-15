@@ -35,6 +35,7 @@ use crate::{
 pub enum TraceEvent {
     Hop(crate::hop::Hop),
     ReverseDns {
+        ttl: u8,
         ip: IpAddr,
         name: Result<String, String>,
     },
@@ -63,12 +64,14 @@ impl AppState {
         let mut hop_stream = Box::pin(trace_handle.hop_stream().await?);
         while let Some(hop) = hop_stream.next().await {
             let addr = hop.addr;
+            let ttl = hop.ttl;
             tx.send(Ok(TraceEvent::Hop(hop))).unwrap();
             if let Some(ip) = addr {
                 let tx = tx.clone();
                 let dns_client = tracer.dns_client.clone();
                 tokio::spawn(async move {
                     tx.send(Ok(TraceEvent::ReverseDns {
+                        ttl,
                         ip,
                         name: dns_client
                             .reverse_lookup(&ip)
