@@ -10,7 +10,6 @@ use anyhow::Context;
 use async_stream::stream;
 use etherparse::{ip_number, Ipv4Header, Ipv6FlowLabel, Ipv6Header, PacketBuilder, TcpHeader};
 use futures::stream::{Stream, StreamExt};
-use hickory_client::proto::rr::dns_class;
 use inband_traceroute_common::{IPAddr, TraceEvent, TraceEventType};
 use log::{debug, info, warn};
 use maxminddb::Reader;
