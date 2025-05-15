@@ -49,7 +49,7 @@ futures = "0.3.31"
 etherparse = "0.17.0"
 nix = { version = "0.30.1", features = ["time"] }
 maxminddb = "0.26.0"
-hickory-client = "0.25.2"
+hickory-resolver = "0.25.2"
 
 [profile.release.package.inband-traceroute-ebpf]
 debug = 2
