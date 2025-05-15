@@ -14,13 +14,14 @@ pub(crate) enum HopType {
 // See https://community.ipinfo.io/t/using-ipinfos-mmdb-database-with-rust/5587
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct IpinfoCountryASN<'a> {
-    pub country: Option<&'a str>,
-    pub country_name: Option<&'a str>,
-    pub continent: Option<&'a str>,
-    pub continent_name: Option<&'a str>,
-    pub asn: Option<&'a str>,
-    pub as_name: Option<&'a str>,
     pub as_domain: Option<&'a str>,
+    pub as_name: Option<&'a str>,
+    pub asn: Option<&'a str>,
+    pub continent: Option<&'a str>,
+    pub continent_code: Option<&'a str>,
+    pub country: Option<&'a str>,
+    pub country_code: Option<&'a str>,
+    pub ip: Option<&'a str>,
 }
 
 impl fmt::Display for HopType {
